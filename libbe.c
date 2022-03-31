@@ -40,11 +40,12 @@ char *root = NULL;
 size_t root_len;
 
 /* libbe handle destructor callback */
-static void
-libbe_handle_dtor(zend_resource *rsrc)
+static
+ZEND_RSRC_DTOR_FUNC(libbe_handle_dtor)
 {
 	libbe_handle_t *be = (libbe_handle_t *)rsrc->ptr;
-	libbe_close(be);
+	if (be)
+		libbe_close(be)
 }
 
 PHP_MINIT_FUNCTION(libbe)
@@ -142,6 +143,7 @@ PHP_FUNCTION(libbe_refresh)
 	if ((be = (libbe_handle_t *)zend_fetch_resource(Z_RES_P(zhdl), le_libbe_name, le_libbe)) == NULL)
 		RETURN_FALSE;
 
+	/* force the resource destructor to be called */
 	zend_list_close(Z_RES_P(zhdl));
 
 	/* use the same root from libbe_init() */

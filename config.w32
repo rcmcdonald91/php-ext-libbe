@@ -1,0 +1,7 @@
+ARG_ENABLE('libbe', 'libbe support', 'no');
+
+if (PHP_LIBBE != 'no') {
+	AC_DEFINE('HAVE_LIBBE', 1, 'libbe support enabled');
+
+	EXTENSION('libbe', 'libbe.c', null, '/DZEND_ENABLE_STATIC_TSRMLS_CACHE=1');
+}

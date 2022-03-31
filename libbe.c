@@ -39,6 +39,57 @@ static int le_libbe;
 static char *root = NULL;
 static size_t root_len;
 
+/* forward declaration */
+static void _php_add_nvpair_to_zval(zval *dsczval, nvpair_t *srcnvp);
+
+/* iterates over an arbitrary nvlist srcnvl, while recursively converting it to a PHP array zval */
+static void
+php_nvlist_to_zval(zval *dsczval, nvlist_t *srcnvl)
+{
+	nvpair_t *curnvp;
+
+	array_init(dsczval);
+
+	for (curnvp = nvlist_next_nvpair(srcnvl, NULL);
+		curnvp != NULL; curnvp = nvlist_next_nvpair(srcnvl, curnvp)) {
+			_php_add_nvpair_to_zval(dsczval, curnvp);
+	}
+}
+
+/* converts an nvpair srcnvp to an appropriate PHP structure */
+static void
+_php_add_nvpair_to_zval(zval *dsczval, nvpair_t *srcnvp)
+{
+	boolean_t bpropval;
+	char *cpropval;
+	nvlist_t *npropval;
+	zval next;
+
+	ZVAL_UNDEF(&next);
+
+	switch(nvpair_type(srcnvp)) {
+		case DATA_TYPE_BOOLEAN_VALUE:
+			if (nvpair_value_boolean_value(srcnvp, &bpropval) != 0)
+				break;
+			add_assoc_bool(dsczval, nvpair_name(srcnvp), bpropval);
+			break;
+		case DATA_TYPE_STRING:
+			if (nvpair_value_string(srcnvp, &cpropval) != 0)
+				break;
+			add_assoc_string(dsczval, nvpair_name(srcnvp), cpropval);
+			break;
+		case DATA_TYPE_NVLIST:
+			if (nvpair_value_nvlist(srcnvp, &npropval) != 0)
+				break;
+			php_nvlist_to_zval(&next, npropval);
+			add_assoc_zval(dsczval, nvpair_name(srcnvp), &next);
+			break;
+		default:
+			/* unknown datatype, skip for now */
+			break;
+	}
+}
+
 /* libbe handle destructor callback */
 static
 ZEND_RSRC_DTOR_FUNC(libbe_handle_dtor)
@@ -919,10 +970,7 @@ PHP_FUNCTION(be_get_bootenv_props)
 	zval *zhdl;
 
 	libbe_handle_t *be;
-	nvlist_t *bootenvs, *curbeprops;
-	nvpair_t *curbe, *curbeprop;
-	zval zbeprops;
-	char *propval;
+	nvlist_t *bootenvs;
 
 	ZEND_PARSE_PARAMETERS_START(1, 1)
 		Z_PARAM_RESOURCE(zhdl)
@@ -941,22 +989,7 @@ PHP_FUNCTION(be_get_bootenv_props)
 		RETURN_FALSE;
 	}
 
-	array_init(return_value);
-	for (curbe = nvlist_next_nvpair(bootenvs, NULL);
-		curbe != NULL; curbe = nvlist_next_nvpair(bootenvs, curbe)) {
-		if (nvpair_value_nvlist(curbe, &curbeprops) != 0)
-			continue;
-
-		array_init(&zbeprops);
-		for (curbeprop = nvlist_next_nvpair(curbeprops, NULL);
-			curbeprop != NULL; curbeprop = nvlist_next_nvpair(curbeprops, curbeprop)) {
-			if (nvpair_value_string(curbeprop, &propval) != 0)
-				continue;
-
-			add_assoc_string(&zbeprops, nvpair_name(curbeprop), propval);
-		}
-		add_assoc_zval(return_value, nvpair_name(curbe), &zbeprops);
-	}
+	php_nvlist_to_zval(return_value, bootenvs);
 
 	be_prop_list_free(bootenvs);
 }
@@ -972,9 +1005,7 @@ PHP_FUNCTION(be_get_dataset_props)
 	size_t ds_name_len;
 
 	libbe_handle_t *be;
-	nvlist_t *props;
-	nvpair_t *curprop;
-	char *propval;
+	nvlist_t *dsprops;
 
 	ZEND_PARSE_PARAMETERS_START(2, 2)
 		Z_PARAM_RESOURCE(zhdl)
@@ -984,25 +1015,19 @@ PHP_FUNCTION(be_get_dataset_props)
 	if ((be = (libbe_handle_t *)zend_fetch_resource(Z_RES_P(zhdl), le_libbe_name, le_libbe)) == NULL)
 		RETURN_FALSE;
 
-	if (be_prop_list_alloc(&props) != 0) {
-		php_error_docref(NULL, E_WARNING, "libbe: failed to allocate props nvlist");
+	if (be_prop_list_alloc(&dsprops) != 0) {
+		php_error_docref(NULL, E_WARNING, "libbe: failed to allocate dataset props nvlist");
 		RETURN_FALSE;
 	}
 
-	if (be_get_dataset_props(be, ds_name, props) != 0) {
+	if (be_get_dataset_props(be, ds_name, dsprops) != 0) {
 		php_error_docref(NULL, E_WARNING, "libbe: failed to fetch dataset properties");
 		RETURN_FALSE;
 	}
 
-	array_init(return_value);
-	for (curprop = nvlist_next_nvpair(props, NULL);
-		curprop != NULL; curprop = nvlist_next_nvpair(props, curprop)) {
-		if (nvpair_value_string(curprop, &propval) != 0)
-			continue;
-		add_assoc_string(return_value, nvpair_name(curprop), propval);
-	}
+	php_nvlist_to_zval(return_value, dsprops);
 
-	be_prop_list_free(props);
+	be_prop_list_free(dsprops);
 }	
 /* }}} */
 
@@ -1017,10 +1042,7 @@ PHP_FUNCTION(be_get_dataset_snapshots)
 	size_t ds_name_len;
 
 	libbe_handle_t *be;
-	nvlist_t *snaps, *cursnapprops;
-	nvpair_t *cursnap, *cursnapprop;
-	zval zcursnapprops;
-	char *propval;
+	nvlist_t *snaps;
 
 	ZEND_PARSE_PARAMETERS_START(2, 2)
 		Z_PARAM_RESOURCE(zhdl)
@@ -1040,22 +1062,7 @@ PHP_FUNCTION(be_get_dataset_snapshots)
 		RETURN_FALSE;
 	}
 
-	array_init(return_value);
-	for (cursnap = nvlist_next_nvpair(snaps, NULL);
-		cursnap != NULL; cursnap = nvlist_next_nvpair(snaps, cursnap)) {
-		if (nvpair_value_nvlist(cursnap, &cursnapprops) != 0)
-			continue;
-
-		array_init(&zcursnapprops);
-		for (cursnapprop = nvlist_next_nvpair(cursnapprops, NULL);
-			cursnapprop != NULL; cursnapprop = nvlist_next_nvpair(cursnapprops, cursnapprop)) {
-			if (nvpair_value_string(cursnapprop, &propval) != 0)
-				continue;
-
-			add_assoc_string(&zcursnapprops, nvpair_name(cursnapprop), propval);
-		}
-		add_assoc_zval(return_value, nvpair_name(cursnap), &zcursnapprops);
-	}
+	php_nvlist_to_zval(return_value, snaps);
 
 	be_prop_list_free(snaps);
 }	

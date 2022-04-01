@@ -203,6 +203,24 @@ PHP_FUNCTION(libbe_refresh)
 /* }}} */
 
 /* {{{
+Function to test boot environment support and sanity. Returns false on systems that don't support BEs
+ */
+PHP_FUNCTION(libbe_check)
+{
+	libbe_handle_t *be;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	/* libbe_init performs preflight checks and returns NULL on failure */
+	RETVAL_BOOL((be = libbe_init(NULL)) != NULL);
+
+	/* cleanup if we need to */
+	if (be)
+		libbe_close(be);
+}
+/* }}} */
+
+/* {{{
 Returns the name of the currently booted boot environment.
  */
 PHP_FUNCTION(be_active_name)
@@ -1093,6 +1111,9 @@ ZEND_BEGIN_ARG_INFO(arginfo_libbe_refresh, 0)
 	ZEND_ARG_INFO(1, hdl)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO(arginfo_libbe_check, 0)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_INFO(arginfo_be_active_name, 0)
 	ZEND_ARG_INFO(0, hdl)
 ZEND_END_ARG_INFO()
@@ -1263,6 +1284,7 @@ static const zend_function_entry libbe_functions[] = {
 	PHP_FE(libbe_init,			arginfo_libbe_init)
 	PHP_FE(libbe_close,			arginfo_libbe_close)
 	PHP_FE(libbe_refresh,			arginfo_libbe_refresh)
+	PHP_FE(libbe_check,			arginfo_libbe_check)
 	PHP_FE(be_active_name,			arginfo_be_active_name)
 	PHP_FE(be_active_path,			arginfo_be_active_path)
 	PHP_FE(be_nextboot_name,		arginfo_be_nextboot_name)

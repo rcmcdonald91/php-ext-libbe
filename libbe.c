@@ -665,10 +665,7 @@ PHP_FUNCTION(be_mounted_at)
 	size_t path_len;
 
 	libbe_handle_t *be;
-	nvlist_t *bes, *curbeprops;
-	nvpair_t *curbe, *curbeprop;
-	zval zbeprops;
-	char *propval;
+	nvlist_t *bootenv;
 
 	ZEND_PARSE_PARAMETERS_START(2, 2)
 		Z_PARAM_RESOURCE(zhdl)
@@ -678,32 +675,20 @@ PHP_FUNCTION(be_mounted_at)
 	if ((be = (libbe_handle_t *)zend_fetch_resource(Z_RES_P(zhdl), le_libbe_name, le_libbe)) == NULL)
 		RETURN_FALSE;
 
-	if (be_prop_list_alloc(&bes) != 0) {
-		php_error_docref(NULL, E_WARNING, "libbe: failed to allocate beprops nvlist");
+	if (be_prop_list_alloc(&bootenv) != 0) {
+		php_error_docref(NULL, E_WARNING, "libbe: failed to allocate bootenv nvlist");
 		RETURN_FALSE;
 	}
 
-	if (be_mounted_at(be, path, bes) != 0)
-		RETURN_FALSE;
-
-	array_init(return_value);
-	for (curbe = nvlist_next_nvpair(bes, NULL);
-		curbe != NULL; curbe = nvlist_next_nvpair(bes, curbe)) {
-		nvpair_value_nvlist(curbe, &curbeprops);
-
-		array_init(&zbeprops);
-		for (curbeprop = nvlist_next_nvpair(curbeprops, NULL);
-			curbeprop != NULL; curbeprop = nvlist_next_nvpair(curbeprops, curbeprop)) {
-			if (nvpair_value_string(curbeprop, &propval) != 0) {
-				continue;
-			}
-
-			add_assoc_string(&zbeprops, nvpair_name(curbeprop), propval);
-		}
-		add_assoc_zval(return_value, nvpair_name(curbe), &zbeprops);
+	if (be_mounted_at(be, path, bootenv) == BE_ERR_SUCCESS) {
+		php_nvlist_to_zval_array(return_value, bootenv);
+		goto cleanup;
 	}
-
-	be_prop_list_free(bes);
+	
+	/* something has gone wrong, set return_value and cleanup */
+	RETVAL_FALSE;
+cleanup:
+	be_prop_list_free(bootenv);
 }
 /* }}} */
 
@@ -994,12 +979,16 @@ PHP_FUNCTION(be_get_bootenv_props)
 		RETURN_FALSE;
 	}
 
-	if (be_get_bootenv_props(be, bootenvs) != 0) {
-		php_error_docref(NULL, E_WARNING, "libbe: failed to fetch boot environments");
-		RETURN_FALSE;
+	if (be_get_bootenv_props(be, bootenvs) == BE_ERR_SUCCESS) {
+		php_nvlist_to_zval_array(return_value, bootenvs);
+		goto cleanup;
 	}
 
-	php_nvlist_to_zval_array(return_value, bootenvs);
+	/* something has gone wrong, set return_value and fall through to cleanup */
+	php_error_docref(NULL, E_WARNING, "libbe: failed to fetch boot environments");
+	RETVAL_FALSE;
+
+cleanup:
 	be_prop_list_free(bootenvs);
 }
 
@@ -1029,12 +1018,16 @@ PHP_FUNCTION(be_get_dataset_props)
 		RETURN_FALSE;
 	}
 
-	if (be_get_dataset_props(be, ds_name, dsprops) != 0) {
-		php_error_docref(NULL, E_WARNING, "libbe: failed to fetch dataset properties");
-		RETURN_FALSE;
+	if (be_get_dataset_props(be, ds_name, dsprops) == BE_ERR_SUCCESS) {
+		php_nvlist_to_zval_array(return_value, dsprops);
+		goto cleanup;
 	}
 
-	php_nvlist_to_zval_array(return_value, dsprops);
+	/* something has gone wrong, set return_value and fall through to cleanup */
+	php_error_docref(NULL, E_WARNING, "libbe: failed to fetch dataset properties");
+	RETVAL_FALSE;
+
+cleanup:
 	be_prop_list_free(dsprops);
 }	
 /* }}} */
@@ -1065,12 +1058,16 @@ PHP_FUNCTION(be_get_dataset_snapshots)
 		RETURN_FALSE;
 	}
 
-	if (be_get_dataset_snapshots(be, ds_name, snaps) != 0) {
-		php_error_docref(NULL, E_WARNING, "libbe: failed to fetch dataset properties");
-		RETURN_FALSE;
+	if (be_get_dataset_snapshots(be, ds_name, snaps) == BE_ERR_SUCCESS) {
+		php_nvlist_to_zval_array(return_value, snaps);
+		goto cleanup;
 	}
 
-	php_nvlist_to_zval_array(return_value, snaps);
+	/* something has gone wrong, set return_value and fall through to cleanup */
+	php_error_docref(NULL, E_WARNING, "libbe: failed to fetch dataset properties");
+	RETVAL_FALSE;
+
+cleanup:
 	be_prop_list_free(snaps);
 }	
 /* }}} */

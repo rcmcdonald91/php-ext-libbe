@@ -39,54 +39,46 @@ static int le_libbe;
 static char *root = NULL;
 static size_t root_len;
 
-/* forward declaration */
-static void _php_add_nvpair_to_zval(zval *dsczval, nvpair_t *srcnvp);
-
-/* iterates over an arbitrary nvlist srcnvl, while recursively converting it to a PHP array zval */
+/* recursively walk an nvlist of arbitrary depth while converting it to a php zend_array zval */
 static void
-php_nvlist_to_zval(zval *dsczval, nvlist_t *srcnvl)
+php_nvlist_to_zval_array(zval *dsczval, nvlist_t *srcnvl)
 {
 	nvpair_t *curnvp;
 
-	array_init(dsczval);
-
-	for (curnvp = nvlist_next_nvpair(srcnvl, NULL);
-		curnvp != NULL; curnvp = nvlist_next_nvpair(srcnvl, curnvp)) {
-			_php_add_nvpair_to_zval(dsczval, curnvp);
-	}
-}
-
-/* converts an nvpair srcnvp to an appropriate PHP structure */
-static void
-_php_add_nvpair_to_zval(zval *dsczval, nvpair_t *srcnvp)
-{
 	boolean_t bpropval;
 	char *cpropval;
 	nvlist_t *npropval;
 	zval next;
 
-	ZVAL_UNDEF(&next);
+	/* might not be necessary, but won't hurt to be sure */
+	ZVAL_UNDEF(dsczval);
 
-	switch(nvpair_type(srcnvp)) {
-		case DATA_TYPE_BOOLEAN_VALUE:
-			if (nvpair_value_boolean_value(srcnvp, &bpropval) != 0)
+	/* we know the final zval will be of type zend_array */
+	array_init(dsczval);
+
+	/* start walking the nvpairs, looking for certain datatypes */
+	for (curnvp = nvlist_next_nvpair(srcnvl, NULL);
+		curnvp != NULL; curnvp = nvlist_next_nvpair(srcnvl, curnvp)) {
+		switch(nvpair_type(curnvp)) {
+			case DATA_TYPE_BOOLEAN_VALUE:
+				if (nvpair_value_boolean_value(curnvp, &bpropval) == 0)
+					add_assoc_bool(dsczval, nvpair_name(curnvp), bpropval);
 				break;
-			add_assoc_bool(dsczval, nvpair_name(srcnvp), bpropval);
-			break;
-		case DATA_TYPE_STRING:
-			if (nvpair_value_string(srcnvp, &cpropval) != 0)
+			case DATA_TYPE_STRING:
+				if (nvpair_value_string(curnvp, &cpropval) == 0)
+					add_assoc_string(dsczval, nvpair_name(curnvp), cpropval);
 				break;
-			add_assoc_string(dsczval, nvpair_name(srcnvp), cpropval);
-			break;
-		case DATA_TYPE_NVLIST:
-			if (nvpair_value_nvlist(srcnvp, &npropval) != 0)
+			/* we found a nested nvlist, so we need to recursively walk it too... */
+			case DATA_TYPE_NVLIST:
+				if (nvpair_value_nvlist(curnvp, &npropval) == 0) {
+					php_nvlist_to_zval_array(&next, npropval);
+					add_assoc_zval(dsczval, nvpair_name(curnvp), &next);
+				}
 				break;
-			php_nvlist_to_zval(&next, npropval);
-			add_assoc_zval(dsczval, nvpair_name(srcnvp), &next);
-			break;
-		default:
-			/* unknown datatype, skip for now */
-			break;
+			default:
+				/* unhandled nvpair datatype, just skip it... can add more later if necessary */
+				break;
+		}
 	}
 }
 
@@ -989,8 +981,7 @@ PHP_FUNCTION(be_get_bootenv_props)
 		RETURN_FALSE;
 	}
 
-	php_nvlist_to_zval(return_value, bootenvs);
-
+	php_nvlist_to_zval_array(return_value, bootenvs);
 	be_prop_list_free(bootenvs);
 }
 
@@ -1025,8 +1016,7 @@ PHP_FUNCTION(be_get_dataset_props)
 		RETURN_FALSE;
 	}
 
-	php_nvlist_to_zval(return_value, dsprops);
-
+	php_nvlist_to_zval_array(return_value, dsprops);
 	be_prop_list_free(dsprops);
 }	
 /* }}} */
@@ -1062,8 +1052,7 @@ PHP_FUNCTION(be_get_dataset_snapshots)
 		RETURN_FALSE;
 	}
 
-	php_nvlist_to_zval(return_value, snaps);
-
+	php_nvlist_to_zval_array(return_value, snaps);
 	be_prop_list_free(snaps);
 }	
 /* }}} */

@@ -1,2 +1,2 @@
-# phpext-libbe
+# php-ext-libbe
 

@@ -4,7 +4,6 @@ PHP_ARG_WITH([libbe],
     [Include libbe support])])
 
 if test "$PHP_LIBBE" != "no"; then
-
   PHP_ADD_INCLUDE(/usr/include)
   
   PHP_ADD_INCLUDE(/usr/src/cddl/contrib/opensolaris/lib/libzfs/common)

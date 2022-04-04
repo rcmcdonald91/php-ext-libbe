@@ -4,6 +4,11 @@ Test be_nicenum() with various numbers
 R. Christian McDonald <cmcdonald@netgate.com>
 --EXTENSIONS--
 libbe
+--SKIPIF--
+<?php
+if (!function_exists('be_nicenum'))
+	print "skip";
+?>
 --FILE--
 <?php
 var_dump(be_nicenum(0));

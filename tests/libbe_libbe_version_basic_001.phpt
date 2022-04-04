@@ -1,21 +1,19 @@
 --TEST--
-Test be_active_path()
+Test libbe_version()
 --CREDITS--
 R. Christian McDonald <cmcdonald@netgate.com>
 --EXTENSIONS--
 libbe
 --SKIPIF--
 <?php
-if (!function_exists('be_active_path'))
+if (!function_exists('libbe_version'))
 	print "skip";
 ?>
 --FILE--
 <?php
-$be = libbe_init();
-var_dump(be_active_path($be));
-libbe_close($be);
+var_dump(libbe_version());
 ?>
 ===DONE===
 --EXPECTF--
-string(%d) "%s"
+string(%d) "%d.%d.%d"
 ===DONE===

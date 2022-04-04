@@ -4,6 +4,11 @@ Test be_nextboot_path()
 R. Christian McDonald <cmcdonald@netgate.com>
 --EXTENSIONS--
 libbe
+--SKIPIF--
+<?php
+if (!function_exists('be_nextboot_path'))
+	print "skip";
+?>
 --FILE--
 <?php
 $be = libbe_init();

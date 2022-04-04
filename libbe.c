@@ -48,7 +48,7 @@ static const zend_function_entry class_libbe_handle_methods[] = {
 	ZEND_FE_END
 };
 
-/* loads libbe object into zval and returns handle to php_libbe */
+/* packs libbe object into zval and returns the handle to php_libbe */
 static php_libbe *
 init_libbe_handle_into_zval(zval *libbe)
 {
@@ -90,7 +90,7 @@ libbe_create_object(zend_class_entry *class_type)
 static zend_function *
 libbe_get_constructor(zend_object *object)
 {
-	php_error_docref(NULL, E_WARNING, "Cannot directly construct %s, use libbe_init() instead", le_libbe_name);
+	php_error_docref(NULL, E_WARNING, "Cannot directly construct LibbeHandle, use libbe_init() instead");
 
 	/* blocks this action */
 	return NULL;
@@ -195,19 +195,17 @@ PHP_FUNCTION(libbe_init)
 
 /* {{{
 Function frees all resources previously acquired in libbe_init(), invalidating
-the handle in the process.
-
-This routine is only included in the PHP extension for the sake of API completeness.
-PHP engine takes care of calling the object destructor as needed. This is a no-op.
+the handle in the process. This is a NOP. Included for API completeness.
  */
 PHP_FUNCTION(libbe_close)
 {
 	zval		*zhdl;
-	php_libbe	*bh;
 
 	ZEND_PARSE_PARAMETERS_START(1, 1)
 		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
 	ZEND_PARSE_PARAMETERS_END();
+
+	/* this is a NOP! */
 }
 /* }}} */
 
@@ -239,8 +237,10 @@ PHP_FUNCTION(libbe_refresh)
 			return;
 		}
 
-		/* now slip the new handle into the object */
+		/* now we slip the new handle into the object */
 		bh->be = be;
+
+		/* looks good */
 		RETURN_TRUE;
 	}
 }

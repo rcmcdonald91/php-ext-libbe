@@ -4,6 +4,11 @@ Test be_active_name()
 R. Christian McDonald <cmcdonald@netgate.com>
 --EXTENSIONS--
 libbe
+--SKIPIF--
+<?php
+if (!function_exists('be_active_name'))
+	print "skip";
+?>
 --FILE--
 <?php
 $be = libbe_init();

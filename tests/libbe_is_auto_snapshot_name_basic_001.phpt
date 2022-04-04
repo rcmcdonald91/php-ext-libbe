@@ -4,6 +4,11 @@ Test is_auto_snapshot_name_basic()
 R. Christian McDonald <cmcdonald@netgate.com>
 --EXTENSIONS--
 libbe
+--SKIPIF--
+<?php
+if (!function_exists('be_is_auto_snapshot_name'))
+	print "skip";
+?>
 --FILE--
 <?php
 $be = libbe_init();

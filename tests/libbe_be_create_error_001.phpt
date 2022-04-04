@@ -4,6 +4,11 @@ Test be_create() with invalid name
 R. Christian McDonald <cmcdonald@netgate.com>
 --EXTENSIONS--
 libbe
+--SKIPIF--
+<?php
+if (!function_exists('be_create'))
+	print "skip";
+?>
 --FILE--
 <?php
 $be = libbe_init();

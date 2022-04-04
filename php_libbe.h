@@ -23,7 +23,7 @@ extern zend_module_entry libbe_module_entry;
 # define PHP_LIBBE_VERSION "0.1.0"
 
 /* internal resource management */
-#define le_libbe_name "libbe handle"
+#define le_libbe_name "LibbeHandle"
 
 /* for easily registering libbe constants */
 #define REGISTER_LIBBE_CONSTANT(__c) REGISTER_LONG_CONSTANT(#__c, __c, CONST_CS | CONST_PERSISTENT)
@@ -32,6 +32,8 @@ extern zend_module_entry libbe_module_entry;
 PHP_FUNCTION(libbe_init);
 PHP_FUNCTION(libbe_close);
 PHP_FUNCTION(libbe_refresh);
+PHP_FUNCTION(libbe_check);
+PHP_FUNCTION(libbe_version);
 PHP_FUNCTION(be_active_name);
 PHP_FUNCTION(be_active_path);
 PHP_FUNCTION(be_nextboot_name);

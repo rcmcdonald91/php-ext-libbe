@@ -95,7 +95,7 @@ libbe_get_constructor(zend_object *object)
 	return NULL;
 }
 
-/* called on object destruction, check to see if we have a handle and free it before freeing the object itself */
+/* called on object destruction */
 static void
 libbe_free_obj(zend_object *object)
 {
@@ -105,7 +105,6 @@ libbe_free_obj(zend_object *object)
 		libbe_close(bh->be);
 
 	zend_object_std_dtor(&bh->std);
-	efree(bh);
 }
 /* }}} */
 

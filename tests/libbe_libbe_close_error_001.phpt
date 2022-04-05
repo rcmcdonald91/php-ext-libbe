@@ -4,10 +4,21 @@ Test libbe_close() with invalid argument (int)
 R. Christian McDonald <cmcdonald@netgate.com>
 --EXTENSIONS--
 libbe
+--SKIPIF--
+<?php
+$funcs = [
+	'libbe_close'
+];
+require('libbe_check.inc');
+?>
 --FILE--
 <?php
-$be = 42;
-libbe_close($be);
+// pretest
+
+// test
+libbe_close(42);
+
+// posttest
 ?>
 ===DONE===
 --EXPECTF--

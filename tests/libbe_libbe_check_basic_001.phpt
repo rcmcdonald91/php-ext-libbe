@@ -1,5 +1,5 @@
 --TEST--
-Test be_nextboot_name()
+Test libbe_close()
 --CREDITS--
 R. Christian McDonald <cmcdonald@netgate.com>
 --EXTENSIONS--
@@ -7,24 +7,20 @@ libbe
 --SKIPIF--
 <?php
 $funcs = [
-	'libbe_init',
-	'be_nextboot_name',
-	'libbe_close'
+	'libbe_check'
 ];
 require('libbe_check.inc');
 ?>
 --FILE--
 <?php
 // pretest
-$be = libbe_init();
 
 // test
-var_dump(be_nextboot_name($be));
+var_dump(libbe_check());
 
 // posttest
-libbe_close($be);
 ?>
 ===DONE===
 --EXPECTF--
-string(%d) "%s"
+bool(true)
 ===DONE===

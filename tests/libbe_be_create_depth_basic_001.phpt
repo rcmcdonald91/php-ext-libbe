@@ -1,5 +1,5 @@
 --TEST--
-Test be_create() with invalid name
+Test be_create_depth()
 --CREDITS--
 R. Christian McDonald <cmcdonald@netgate.com>
 --EXTENSIONS--
@@ -8,8 +8,8 @@ libbe
 <?php
 $funcs = [
 	'libbe_init',
-	'be_active_name',
-	'be_create',
+	'be_snapshot',
+	'be_create_depth',
 	'libbe_error_description',
 	'be_destroy',
 	'libbe_close'
@@ -20,18 +20,20 @@ require('libbe_check.inc');
 <?php
 // pretest
 $be = libbe_init();
-$be_name = be_active_name($be).'libbeexttest&$.';
+$be_to_create = "libbe_ext_test".rand(0, 100);
 
 // test
-var_dump(be_create($be, $be_name));
-var_dump(libbe_error_description($be));
+if ($be_from_snapshot = be_snapshot($be, be_active_name($be))) {
+	var_dump(be_create_depth($be, $be_to_create, $be_from_snapshot));
+	var_dump(libbe_error_description($be));
+}
 
 // posttest
-be_destroy($be, $be_name);
+be_destroy($be, $be_to_create);
 libbe_close($be);
 ?>
 ===DONE===
 --EXPECTF--
-int(1)
-string(29) "invalid boot environment name"
+int(0)
+string(8) "no error"
 ===DONE===

@@ -1,5 +1,5 @@
 --TEST--
-Test be_nextboot_name()
+Test libbe_refresh() with invalid handle (string)
 --CREDITS--
 R. Christian McDonald <cmcdonald@netgate.com>
 --EXTENSIONS--
@@ -7,24 +7,20 @@ libbe
 --SKIPIF--
 <?php
 $funcs = [
-	'libbe_init',
-	'be_nextboot_name',
-	'libbe_close'
+	'libbe_refresh'
 ];
 require('libbe_check.inc');
 ?>
 --FILE--
 <?php
 // pretest
-$be = libbe_init();
 
 // test
-var_dump(be_nextboot_name($be));
+libbe_refresh("42");
 
 // posttest
-libbe_close($be);
 ?>
 ===DONE===
 --EXPECTF--
-string(%d) "%s"
+Warning: libbe_refresh() expects parameter %d to be LibbeHandle, %s given in %s on line %d
 ===DONE===

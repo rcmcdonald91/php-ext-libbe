@@ -6,13 +6,22 @@ R. Christian McDonald <cmcdonald@netgate.com>
 libbe
 --SKIPIF--
 <?php
-if (!function_exists('be_active_name'))
-	print "skip";
+$funcs = [
+	'libbe_init',
+	'be_active_name',
+	'libbe_close'
+];
+require('libbe_check.inc');
 ?>
 --FILE--
 <?php
+// pretest
 $be = libbe_init();
+
+// test
 var_dump(be_active_name($be));
+
+// posttest
 libbe_close($be);
 ?>
 ===DONE===

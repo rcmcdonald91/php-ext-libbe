@@ -6,13 +6,22 @@ R. Christian McDonald <cmcdonald@netgate.com>
 libbe
 --SKIPIF--
 <?php
-if (!function_exists('be_nextboot_path'))
-	print "skip";
+$funcs = [
+	'libbe_init',
+	'be_nextboot_path',
+	'libbe_close'
+];
+require('libbe_check.inc');
 ?>
 --FILE--
 <?php
+// pretest
 $be = libbe_init();
+
+// test
 var_dump(be_nextboot_path($be));
+
+// posttest
 libbe_close($be);
 ?>
 ===DONE===

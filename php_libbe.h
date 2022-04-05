@@ -20,7 +20,7 @@
 extern zend_module_entry libbe_module_entry;
 # define phpext_libbe_ptr &libbe_module_entry
 
-# define PHP_LIBBE_VERSION "0.1.0"
+# define PHP_LIBBE_VERSION "0.1.1"
 
 /* internal resource management */
 #define le_libbe_name "LibbeHandle"
@@ -28,7 +28,10 @@ extern zend_module_entry libbe_module_entry;
 /* for easily registering libbe constants */
 #define REGISTER_LIBBE_CONSTANT(__c) REGISTER_LONG_CONSTANT(#__c, __c, CONST_CS | CONST_PERSISTENT)
 
-/* forward declarations */
+PHP_MINIT_FUNCTION(libbe);
+PHP_RINIT_FUNCTION(libbe);
+PHP_MINFO_FUNCTION(libbe);
+
 PHP_FUNCTION(libbe_init);
 PHP_FUNCTION(libbe_close);
 PHP_FUNCTION(libbe_refresh);

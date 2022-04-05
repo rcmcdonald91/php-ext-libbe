@@ -6,12 +6,19 @@ R. Christian McDonald <cmcdonald@netgate.com>
 libbe
 --SKIPIF--
 <?php
-if (!function_exists('libbe_version'))
-	print "skip";
+$funcs = [
+	'libbe_version'
+];
+require('libbe_check.inc');
 ?>
 --FILE--
 <?php
+// pretest
+
+// test
 var_dump(libbe_version());
+
+// posttest
 ?>
 ===DONE===
 --EXPECTF--

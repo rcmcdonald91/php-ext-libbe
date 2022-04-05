@@ -43,19 +43,20 @@ static void php_nvlist_to_zval_array(zval *dsczval, nvlist_t *srcnvl);
 /*  {{{ LibbeHandle class
  */
 static zend_class_entry *libbe_ce;
+
 static zend_object_handlers libbe_object_handlers;
 static const zend_function_entry class_libbe_handle_methods[] = {
 	ZEND_FE_END
 };
 
-/* packs libbe object into zval and returns the handle to php_libbe */
+/* packs libbe object into a zval and returns the handle to php_libbe */
 static php_libbe *
-init_libbe_handle_into_zval(zval *libbe)
+init_libbe_handle_into_zval(zval *dstzval)
 {
 	php_libbe *bh;
 
-	object_init_ex(libbe, libbe_ce);
-	bh = Z_LIBBE_P(libbe);
+	object_init_ex(dstzval, libbe_ce);
+	bh = Z_LIBBE_P(dstzval);
 
 	return bh;
 }
@@ -90,9 +91,7 @@ libbe_create_object(zend_class_entry *class_type)
 static zend_function *
 libbe_get_constructor(zend_object *object)
 {
-	php_error_docref(NULL, E_WARNING, "Cannot directly construct LibbeHandle, use libbe_init() instead");
-
-	/* blocks this action */
+	php_error_docref(NULL, E_WARNING, "Cannot directly construct %s, use libbe_init() instead", le_libbe_name);
 	return NULL;
 }
 
@@ -106,6 +105,7 @@ libbe_free_obj(zend_object *object)
 		libbe_close(bh->be);
 
 	zend_object_std_dtor(&bh->std);
+	efree(bh);
 }
 /* }}} */
 
@@ -181,7 +181,7 @@ PHP_FUNCTION(libbe_init)
 
 	/* attempt to initialize libbe */
 	if ((be = libbe_init(root)) == NULL) {	
-		php_error_docref(NULL, E_WARNING, "Could not initialize new libbe handle");
+		php_error_docref(NULL, E_WARNING, "Could not initialize %s", le_libbe_name);
 		return;
 	}
 
@@ -195,7 +195,7 @@ PHP_FUNCTION(libbe_init)
 
 /* {{{
 Function frees all resources previously acquired in libbe_init(), invalidating
-the handle in the process. This is a NOP. Included for API completeness.
+the handle in the process. This is a NOP. Included for the sake of API completeness.
  */
 PHP_FUNCTION(libbe_close)
 {
@@ -228,26 +228,30 @@ PHP_FUNCTION(libbe_refresh)
 
 	RETVAL_FALSE;
 
-	if (bh->be) {
-		libbe_close(bh->be);
+	/* nothing to do... */
+	if (!bh->be)
+		return;
 
-		/* try to grab a new handle */
-		if ((be = libbe_init(root)) == NULL) {
-			php_error_docref(NULL, E_WARNING, "Could not initialize a new libbe handle");
-			return;
-		}
+	/* close the current libbe handle */
+	libbe_close(bh->be);
 
-		/* now we slip the new handle into the object */
-		bh->be = be;
-
-		/* looks good */
-		RETURN_TRUE;
+	/* try to grab a new handle */
+	if ((be = libbe_init(root)) == NULL) {
+		php_error_docref(NULL, E_WARNING, "Could not initialize %s", le_libbe_name);
+		return;
 	}
+
+	/* now we slip the new handle into the object */
+	bh->be = be;
+
+	/* looks good */
+	RETVAL_TRUE;
 }
 /* }}} */
 
 /* {{{
-Function to test boot environment support and sanity. Returns false on systems that don't support BEs.
+Function to test boot environment support and sanity.
+Returns false on systems that don't support BEs.
  */
 PHP_FUNCTION(libbe_check)
 {
@@ -255,13 +259,10 @@ PHP_FUNCTION(libbe_check)
 
 	ZEND_PARSE_PARAMETERS_NONE();
 
-	RETVAL_FALSE;
+	RETVAL_BOOL((be = libbe_init(NULL)) != NULL);
 
-	/* libbe_init performs preflight checks and returns NULL on failure */
-	if ((be = libbe_init(NULL)) != NULL) {
+	if (be)
 		libbe_close(be);
-		RETURN_TRUE;
-	}
 }
 /* }}} */
 
@@ -276,10 +277,10 @@ PHP_FUNCTION(libbe_version)
 }
 /* }}} */
 
-/* {{{
-Returns the name of the currently booted boot environment.
- */
-PHP_FUNCTION(be_active_name)
+/* this is an implementation shared by several libbe functions below */
+static void
+_php_libbe_char_getter_impl(
+	INTERNAL_FUNCTION_PARAMETERS, const char *(*be_func)(libbe_handle_t *))
 {
 	zval		*zhdl;
 
@@ -294,7 +295,15 @@ PHP_FUNCTION(be_active_name)
 	RETVAL_FALSE;
 
 	if (bh->be)
-		RETURN_STRING(be_active_name(bh->be));
+		RETURN_STRING(be_func(bh->be));
+}
+
+/* {{{
+Returns the name of the currently booted boot environment.
+ */
+PHP_FUNCTION(be_active_name)
+{
+	_php_libbe_char_getter_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, be_active_name);
 }
 /* }}} */
 
@@ -303,20 +312,7 @@ Returns the full path of the currently booted boot environment.
  */
 PHP_FUNCTION(be_active_path)
 {
-	zval		*zhdl;
-
-	php_libbe	*bh;
-
-	ZEND_PARSE_PARAMETERS_START(1, 1)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-	ZEND_PARSE_PARAMETERS_END();
-
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be)
-		RETURN_STRING(be_active_path(bh->be));
+	_php_libbe_char_getter_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, be_active_path);
 }
 /* }}} */
 
@@ -325,20 +321,7 @@ Returns the name of the boot environment that will be active on reboot.
  */
 PHP_FUNCTION(be_nextboot_name)
 {
-	zval		*zhdl;
-
-	php_libbe	*bh;
-
-	ZEND_PARSE_PARAMETERS_START(1, 1)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-	ZEND_PARSE_PARAMETERS_END();
-
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be)
-		RETURN_STRING(be_nextboot_name(bh->be));
+	_php_libbe_char_getter_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, be_nextboot_name);
 }
 /* }}} */
 
@@ -347,20 +330,7 @@ Returns the full path of the boot environment that will be active on reboot.
  */
 PHP_FUNCTION(be_nextboot_path)
 {
-	zval		*zhdl;
-
-	php_libbe	*bh;
-
-	ZEND_PARSE_PARAMETERS_START(1, 1)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-	ZEND_PARSE_PARAMETERS_END();
-
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be)
-		RETURN_STRING(be_nextboot_path(bh->be));
+	_php_libbe_char_getter_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, be_nextboot_path);
 }
 /* }}} */
 
@@ -369,20 +339,7 @@ Returns the boot environment root path.
  */
 PHP_FUNCTION(be_root_path)
 {
-	zval		*zhdl;
-
-	php_libbe	*bh;
-
-	ZEND_PARSE_PARAMETERS_START(1, 1)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-	ZEND_PARSE_PARAMETERS_END();
-
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be)
-		RETURN_STRING(be_root_path(bh->be));
+	_php_libbe_char_getter_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, be_root_path);
 }
 /* }}} */
 
@@ -759,7 +716,7 @@ PHP_FUNCTION(be_mounted_at)
 
 	if (bh->be) {
 		if (be_prop_list_alloc(&bootenv) != BE_ERR_SUCCESS) {
-			php_error_docref(NULL, E_WARNING, "Failed to allocate bootenv nvlist");
+			php_error_docref(NULL, E_WARNING, "Failed to allocate nvlist");
 			return;
 		}
 
@@ -828,20 +785,7 @@ Function returns a string description of the currently set libbe errno.
  */
 PHP_FUNCTION(libbe_error_description)
 {
-	zval		*zhdl;
-
-	php_libbe	*bh;
-
-	ZEND_PARSE_PARAMETERS_START(1, 1)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-	ZEND_PARSE_PARAMETERS_END();
-
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be)
-		RETURN_STRING(libbe_error_description(bh->be));
+	_php_libbe_char_getter_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, libbe_error_description);
 }
 /* }}} */
 
@@ -982,11 +926,10 @@ PHP_FUNCTION(be_exists)
 }
 /* }}} */
 
-/* {{{
-Function will export the given boot environment to the file specified by fd. A snapshot
-will be created of the boot environment prior to export.
- */
-PHP_FUNCTION(be_export)
+/* this is an implementation shared by several libbe functions below */
+static void
+_php_libbe_import_export_impl(
+	INTERNAL_FUNCTION_PARAMETERS, int (*be_func)(libbe_handle_t *, const char*, int))
 {
 	zval		*zhdl;
 	char		*be_name;
@@ -1011,9 +954,18 @@ PHP_FUNCTION(be_export)
 		php_stream_from_zval(stream, zfd);
 		if (php_stream_can_cast(stream, PHP_STREAM_AS_FD) == SUCCESS) {
 			php_stream_cast(stream, PHP_STREAM_AS_FD, (void**)&fd, REPORT_ERRORS);
-			RETURN_LONG(be_export(bh->be, be_name, fd));
+			RETURN_LONG(be_func(bh->be, be_name, fd));
 		}
 	}
+}
+
+/* {{{
+Function will export the given boot environment to the file specified by fd. A snapshot
+will be created of the boot environment prior to export.
+ */
+PHP_FUNCTION(be_export)
+{
+	_php_libbe_import_export_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, be_export);
 }	
 /* }}} */
 
@@ -1022,32 +974,7 @@ Function will import the boot environment in the file specified by fd, and give 
  */
 PHP_FUNCTION(be_import)
 {
-	zval		*zhdl;
-	char		*be_name;
-	size_t		be_name_len;
-	zval		*zfd;
-
-	php_libbe	*bh;
-	php_stream	*stream;
-	int		fd;
-
-	ZEND_PARSE_PARAMETERS_START(3, 3)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-		Z_PARAM_STRING(be_name, be_name_len)
-		Z_PARAM_RESOURCE(zfd)
-	ZEND_PARSE_PARAMETERS_END();
-
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be) {
-		php_stream_from_zval(stream, zfd);
-		if (php_stream_can_cast(stream, PHP_STREAM_AS_FD) == SUCCESS) {
-			php_stream_cast(stream, PHP_STREAM_AS_FD, (void**)&fd, REPORT_ERRORS);
-			RETURN_LONG(be_import(bh->be, be_name, fd));
-		}
-	}
+	_php_libbe_import_export_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, be_import);
 }	
 /* }}} */
 
@@ -1072,7 +999,7 @@ PHP_FUNCTION(be_get_bootenv_props)
 
 	if (bh->be) {
 		if (be_prop_list_alloc(&bootenvs) != 0) {
-			php_error_docref(NULL, E_WARNING, "Failed to allocate boot environments nvlist");
+			php_error_docref(NULL, E_WARNING, "Failed to allocate nvlist");
 			return;
 		}
 
@@ -1083,18 +1010,16 @@ PHP_FUNCTION(be_get_bootenv_props)
 	}
 }
 
-/* {{{
-Function will get properties of the specified dataset. props is populated directly with a 
-list of the properties as returned by be_get_bootenv_props()
- */
-PHP_FUNCTION(be_get_dataset_props)
+static void
+_php_libbe_dataset_impl(
+	INTERNAL_FUNCTION_PARAMETERS, int (*be_func)(libbe_handle_t *, const char*, nvlist_t *))
 {
 	zval		*zhdl;
 	char		*ds_name;
 	size_t		ds_name_len;
 
 	php_libbe	*bh;
-	nvlist_t	*dsprops;
+	nvlist_t	*proplist;
 
 	ZEND_PARSE_PARAMETERS_START(2, 2)
 		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
@@ -1106,16 +1031,25 @@ PHP_FUNCTION(be_get_dataset_props)
 	RETVAL_FALSE;
 
 	if (bh->be) {
-		if (be_prop_list_alloc(&dsprops) != 0) {
-			php_error_docref(NULL, E_WARNING, "Failed to allocate dataset properties nvlist");
+		if (be_prop_list_alloc(&proplist) != 0) {
+			php_error_docref(NULL, E_WARNING, "Failed to allocate nvlist");
 			return;
 		}
 
-		if (be_get_dataset_props(bh->be, ds_name, dsprops) == BE_ERR_SUCCESS)
-			php_nvlist_to_zval_array(return_value, dsprops);
+		if (be_func(bh->be, ds_name, proplist) == BE_ERR_SUCCESS)
+			php_nvlist_to_zval_array(return_value, proplist);
 
-		be_prop_list_free(dsprops);
+		be_prop_list_free(proplist);
 	}
+}
+
+/* {{{
+Function will get properties of the specified dataset. props is populated directly with a 
+list of the properties as returned by be_get_bootenv_props()
+ */
+PHP_FUNCTION(be_get_dataset_props)
+{
+	_php_libbe_dataset_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, be_get_dataset_props);
 }	
 /* }}} */
 
@@ -1125,33 +1059,7 @@ a list of nvpair_t exactly as specified by be_get_bootenv_props()
  */
 PHP_FUNCTION(be_get_dataset_snapshots)
 {
-	zval		*zhdl;
-	char		*ds_name;
-	size_t		ds_name_len;
-
-	php_libbe	*bh;
-	nvlist_t	*snaps;
-
-	ZEND_PARSE_PARAMETERS_START(2, 2)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-		Z_PARAM_STRING(ds_name, ds_name_len)
-	ZEND_PARSE_PARAMETERS_END();
-
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be) {
-		if (be_prop_list_alloc(&snaps) != 0) {
-			php_error_docref(NULL, E_WARNING, "Failed to allocate snapshots nvlist");
-			return;
-		}
-
-		if (be_get_dataset_snapshots(bh->be, ds_name, snaps) == BE_ERR_SUCCESS)
-			php_nvlist_to_zval_array(return_value, snaps);
-
-		be_prop_list_free(snaps);
-	}
+	_php_libbe_dataset_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, be_get_dataset_snapshots);
 }	
 /* }}} */
 

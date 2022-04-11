@@ -1,5 +1,7 @@
 # FreeBSD libbe(3) Extension for PHP
 
+[![Build Status](https://github.com/theonemcdonald/php-ext-libbe/actions/workflows/main.yml/badge.svg)](https://github.com/theonemcdonald/php-ext-libbe/actions/workflows/main.yml)
+
 This PHP extension is a 1:1 wrapper for the FreeBSD libbe(3) library.
 
 FreeBSD libbe(3) is a library for creating, destroying and modifying ZFS boot environments. 

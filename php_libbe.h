@@ -21,7 +21,7 @@ extern zend_module_entry libbe_module_entry;
 # define phpext_libbe_ptr &libbe_module_entry
 
 /* remember to update verison string here too */
-# define PHP_LIBBE_VERSION "0.1.3"
+# define PHP_LIBBE_VERSION "0.1.4"
 
 /* internal resource management */
 #define le_libbe_name "LibbeHandle"

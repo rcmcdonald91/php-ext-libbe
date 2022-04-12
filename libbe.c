@@ -172,14 +172,14 @@ PHP_FUNCTION(libbe_init)
 
 	ZEND_PARSE_PARAMETERS_START(0, 1)
 		Z_PARAM_OPTIONAL
-		Z_PARAM_STRING(root, root_len);
+		Z_PARAM_STRING(root, root_len)
 	ZEND_PARSE_PARAMETERS_END();
 
 	/* default return case */
 	RETVAL_FALSE;
 
 	/* attempt to initialize libbe */
-	if ((be = libbe_init(root)) == NULL) {	
+	if ((be = libbe_init(root_len > 0 ? root : NULL)) == NULL) {	
 		php_error_docref(NULL, E_WARNING, "Could not initialize %s", le_libbe_name);
 		return;
 	}
@@ -235,7 +235,7 @@ PHP_FUNCTION(libbe_refresh)
 	libbe_close(bh->be);
 
 	/* try to grab a new handle */
-	if ((be = libbe_init(root)) == NULL) {
+	if ((be = libbe_init(root_len > 0 ? root : NULL)) == NULL) {
 		php_error_docref(NULL, E_WARNING, "Could not initialize %s", le_libbe_name);
 		return;
 	}

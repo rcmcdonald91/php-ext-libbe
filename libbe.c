@@ -427,7 +427,7 @@ PHP_FUNCTION(be_create)
 
 	if (bh->be)
 		if (strchr(be_name, ' ') != NULL)
-			RETURN_LONG(BE_ERR_INVALIDNAME)
+			RETURN_LONG(BE_ERR_INVALIDNAME);
 		RETURN_LONG(be_create(bh->be, be_name));
 }
 /* }}} */
@@ -461,7 +461,7 @@ PHP_FUNCTION(be_create_depth)
 
 	if (bh->be)
 		if (strchr(be_name, ' ') != NULL)
-			RETURN_LONG(BE_ERR_INVALIDNAME)
+			RETURN_LONG(BE_ERR_INVALIDNAME);
 		RETURN_LONG(be_create_depth(bh->be, be_name, snap, depth));
 }
 /* }}} */
@@ -491,7 +491,7 @@ PHP_FUNCTION(be_create_from_existing)
 
 	if (bh->be)
 		if (strchr(be_name, ' ') != NULL)
-			RETURN_LONG(BE_ERR_INVALIDNAME)
+			RETURN_LONG(BE_ERR_INVALIDNAME);
 		RETURN_LONG(be_create_from_existing(bh->be, be_name, be_origin));
 }
 /* }}} */
@@ -519,7 +519,7 @@ PHP_FUNCTION(be_create_from_existing_snap)
 
 	if (bh->be)
 		if (strchr(be_name, ' ') != NULL)
-			RETURN_LONG(BE_ERR_INVALIDNAME)
+			RETURN_LONG(BE_ERR_INVALIDNAME);
 		RETURN_LONG(be_create_from_existing_snap(bh->be, be_name, snap));
 }
 /* }}} */
@@ -548,7 +548,7 @@ PHP_FUNCTION(be_rename)
 
 	if (bh->be)
 		if (strchr(be_new, ' ') != NULL)
-			RETURN_LONG(BE_ERR_INVALIDNAME)
+			RETURN_LONG(BE_ERR_INVALIDNAME);
 		RETURN_LONG(be_rename(bh->be, be_old, be_new));
 }
 /* }}} */
@@ -875,8 +875,7 @@ PHP_FUNCTION(be_validate_name)
 
 	if (bh->be) {
 		if (strchr(be_name, ' ') != NULL)
-			RETURN_LONG(BE_ERR_INVALIDNAME)
-
+			RETURN_LONG(BE_ERR_INVALIDNAME);
 		RETURN_LONG(be_validate_name(bh->be, be_name));
 	}
 }

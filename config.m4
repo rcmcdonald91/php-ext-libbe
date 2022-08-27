@@ -5,7 +5,10 @@ PHP_ARG_WITH([libbe],
 
 if test "$PHP_LIBBE" != "no"; then
   dnl libnvpair
+  PHP_DEFINE(NEED_SOLARIS_BOOLEAN)
   PHP_ADD_INCLUDE(/sys/contrib/openzfs/include)
+  PHP_ADD_INCLUDE(/usr/src/sys/contrib/openzfs/include/os/freebsd/spl)
+  PHP_ADD_INCLUDE(/usr/src/sys/contrib/openzfs/include/os/freebsd)
   PHP_ADD_INCLUDE(/usr/src/sys/cddl/compat/opensolaris)
   PHP_ADD_LIBRARY_WITH_PATH(nvpair, /lib, LIBBE_SHARED_LIBADD)
 

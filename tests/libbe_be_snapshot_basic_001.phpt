@@ -10,7 +10,7 @@ $funcs = [
 	'libbe_init',
 	'be_active_name',
 	'be_snapshot',
-	'be_is_auto_snapshot_name'
+	'be_is_auto_snapshot_name',
 	'libbe_close'
 ];
 require('libbe_check.inc');

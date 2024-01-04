@@ -1,6 +1,6 @@
 # FreeBSD libbe(3) Extension for PHP
 
-[![Build Status](https://github.com/theonemcdonald/php-ext-libbe/actions/workflows/main.yml/badge.svg)](https://github.com/theonemcdonald/php-ext-libbe/actions/workflows/main.yml)
+[![Build Status](https://api.cirrus-ci.com/github/rcmcdonald91/php-ext-libbe.svg)](https://cirrus-ci.com/github/rcmcdonald91/php-ext-libbe)
 
 This PHP extension is a 1:1 wrapper for the FreeBSD libbe(3) library.
 

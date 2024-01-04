@@ -11,5 +11,10 @@ build_task:
   matrix:
     compute_engine_instance:
       image: family/freebsd-15-0-snap
+  prepare_script:
+    - pkg install -y autoconf automake libtool gmake php83 php83-tokenizer
+  configure_script:
+    - env MAKE=gmake phpize
+    - env MAKE=gmake ./configure
   info_script:
     - "uname -a"

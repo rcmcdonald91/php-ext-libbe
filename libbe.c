@@ -1,29 +1,33 @@
 /*
-   +----------------------------------------------------------------------+
-   | Copyright (c) The PHP Group                                          |
-   +----------------------------------------------------------------------+
-   | This source file is subject to version 3.01 of the PHP license,      |
-   | that is bundled with this package in the file LICENSE, and is        |
-   | available through the world-wide-web at the following url:           |
-   | https://www.php.net/license/3_01.txt                                 |
-   | If you did not receive a copy of the PHP license and are unable to   |
-   | obtain it through the world-wide-web, please send a note to          |
-   | license@php.net so we can mail you a copy immediately.               |
-   +----------------------------------------------------------------------+
-   | Author: R. Christian McDonald <cmcdonald@netgate.com                 |
-   +----------------------------------------------------------------------+
-*/
+ * libbe.c
+ *
+ * Copyright (c) 2022-2024 R. Christian McDonald <rcm@rcm.sh>
+ * All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif
 
-/* includes for php */
 #include "php.h"
 #include "ext/standard/info.h"
+#include "main/php_network.h"
 
-/* includes for libbe */
 #include "libbe_private.h"
+#include "libbe_arginfo.h"
 
 /* For compatibility with older PHP versions */
 #ifndef ZEND_PARSE_PARAMETERS_NONE
@@ -32,24 +36,11 @@
 	ZEND_PARSE_PARAMETERS_END()
 #endif
 
-static int	le_libbe;
+static zend_class_entry *libbe_ce;
+static zend_object_handlers libbe_object_handlers;
 
-static char	*root = NULL;
-static size_t	root_len;
-
-/* forward declarations */
 static void php_nvlist_to_zval_array(zval *dsczval, nvlist_t *srcnvl);
 
-/*  {{{ LibbeHandle class
- */
-static zend_class_entry *libbe_ce;
-
-static zend_object_handlers libbe_object_handlers;
-static const zend_function_entry class_libbe_handle_methods[] = {
-	ZEND_FE_END
-};
-
-/* packs libbe object into a zval and returns the handle to php_libbe */
 static php_libbe *
 init_libbe_handle_into_zval(zval *dstzval)
 {
@@ -61,20 +52,6 @@ init_libbe_handle_into_zval(zval *dstzval)
 	return bh;
 }
 
-/* registers the libbe handle class entry with zend */
-static zend_class_entry *
-register_class_libbe_handle(void)
-{
-	zend_class_entry ce, *class_entry;
-
-	INIT_CLASS_ENTRY(ce, le_libbe_name, class_libbe_handle_methods);
-	class_entry = zend_register_internal_class_ex(&ce, NULL);
-	class_entry->ce_flags |= ZEND_ACC_FINAL;
-
-	return class_entry;
-}
-
-/* creates the libbe object given the class entry (ce) type allocation */
 static zend_object *
 libbe_create_object(zend_class_entry *class_type)
 {
@@ -82,20 +59,16 @@ libbe_create_object(zend_class_entry *class_type)
 
 	zend_object_std_init(&intern->std, class_type);
 	object_properties_init(&intern->std, class_type);
-	intern->std.handlers = &libbe_object_handlers;
 
 	return &intern->std;
 }
 
-/* called on object instantiation, we don't want users doing this directly so we warn and block it. */
-static zend_function *
-libbe_get_constructor(zend_object *object)
+static zend_function *libbe_get_constructor(zend_object *object)
 {
-	php_error_docref(NULL, E_WARNING, "Cannot directly construct %s, use libbe_init() instead", le_libbe_name);
+	php_error_docref(NULL, E_WARNING, "Cannot directly construct LibbeHandle, use libbe_init() instead");
 	return NULL;
 }
 
-/* called on object destruction */
 static void
 libbe_free_obj(zend_object *object)
 {
@@ -106,558 +79,286 @@ libbe_free_obj(zend_object *object)
 
 	zend_object_std_dtor(&bh->std);
 }
-/* }}} */
 
-/* {{{ PHP Module Initialization 
- */
 PHP_MINIT_FUNCTION(libbe)
 {
-	/* BE_ERR_* constants */
-	REGISTER_LIBBE_CONSTANT(BE_ERR_SUCCESS);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_INVALIDNAME);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_EXISTS);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_NOENT);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_PERMS);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_DESTROYACT);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_DESTROYMNT);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_BADPATH);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_PATHBUSY);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_PATHLEN);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_BADMOUNT);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_NOORIGIN);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_MOUNTED);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_NOMOUNT);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_ZFSOPEN);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_ZFSCLONE);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_IO);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_NOPOOL);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_NOMEM);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_UNKNOWN);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_INVORIGIN);
-	REGISTER_LIBBE_CONSTANT(BE_ERR_HASCLONES);
+	register_libbe_symbols(module_number);
 
-	/* BE_DESTROY_* constants */
-	REGISTER_LIBBE_CONSTANT(BE_DESTROY_FORCE);
-	REGISTER_LIBBE_CONSTANT(BE_DESTROY_ORIGIN);
-	REGISTER_LIBBE_CONSTANT(BE_DESTROY_AUTOORIGIN);
-
-	/* BE_MNT_* constants */
-	REGISTER_LIBBE_CONSTANT(BE_MNT_FORCE);
-	REGISTER_LIBBE_CONSTANT(BE_MNT_DEEP);
-
-	/* LibbeHandle Class */
-	libbe_ce = register_class_libbe_handle();
+	libbe_ce = register_class_LibbeHandle();
 	libbe_ce->create_object = libbe_create_object;
+	libbe_ce->default_object_handlers = &libbe_object_handlers;
 
-	/* we want to override the default object handlers, calculate offsets */
 	memcpy(&libbe_object_handlers, &std_object_handlers, sizeof(zend_object_handlers));
 	libbe_object_handlers.offset = XtOffsetOf(php_libbe, std);
 
-	/* point at new object handlers */
-	libbe_object_handlers.get_constructor	= libbe_get_constructor;
-	libbe_object_handlers.free_obj		= libbe_free_obj;
+	libbe_object_handlers.free_obj = libbe_free_obj;
+	libbe_object_handlers.get_constructor = libbe_get_constructor;
+	libbe_object_handlers.compare = zend_objects_not_comparable;
 
-	/* all done */
 	return SUCCESS;
 }
-/* }}} */
 
-/* {{{
-Takes an optional BE root and initializes libbe.
- */
 PHP_FUNCTION(libbe_init)
 {
-	libbe_handle_t	*be;
-	php_libbe	*bh;
+	char *root = NULL;
+	size_t root_len = 0;
 
 	ZEND_PARSE_PARAMETERS_START(0, 1)
 		Z_PARAM_OPTIONAL
-		Z_PARAM_STRING(root, root_len)
+		Z_PARAM_STRING_OR_NULL(root, root_len)
 	ZEND_PARSE_PARAMETERS_END();
 
-	/* default return case */
-	RETVAL_FALSE;
+	libbe_handle_t *be;
+	php_libbe *bh;
 
-	/* attempt to initialize libbe */
-	if ((be = libbe_init(root_len > 0 ? root : NULL)) == NULL) {	
-		php_error_docref(NULL, E_WARNING, "Could not initialize %s", le_libbe_name);
-		return;
+	if ((be = libbe_init(root)) == NULL) {
+		php_error_docref(NULL, E_ERROR, "Could not initialize a new libbe handle");
+		RETURN_FALSE;
 	}
 
-	/* set return_value to point at our libbe object */
 	bh = init_libbe_handle_into_zval(return_value);
-
-	/* set internal libbe_handle_t to point to our newly initialized be handle */
 	bh->be = be;
 }
-/* }}} */
 
-/* {{{
-Function frees all resources previously acquired in libbe_init(), invalidating
-the handle in the process. This is a NOP. Included for the sake of API completeness.
- */
 PHP_FUNCTION(libbe_close)
 {
-	zval		*zhdl;
+	zval *zbe;
 
 	ZEND_PARSE_PARAMETERS_START(1, 1)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
 	ZEND_PARSE_PARAMETERS_END();
-
-	/* this is a NOP! */
-}
-/* }}} */
-
-/* {{{
-Function refreshes the libbe handle and data by requesting a new one.
- */
-PHP_FUNCTION(libbe_refresh)
-{
-	zval		*zhdl;
-
-	php_libbe	*bh;
-	libbe_handle_t	*be;
-
-	/* pass zhdl by reference from userspace */
-	ZEND_PARSE_PARAMETERS_START(1, 1)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-	ZEND_PARSE_PARAMETERS_END();
-
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	/* nothing to do... */
-	if (!bh->be)
-		return;
-
-	/* close the current libbe handle */
-	libbe_close(bh->be);
-
-	/* try to grab a new handle */
-	if ((be = libbe_init(root_len > 0 ? root : NULL)) == NULL) {
-		php_error_docref(NULL, E_WARNING, "Could not initialize %s", le_libbe_name);
-		return;
-	}
-
-	/* now we slip the new handle into the object */
-	bh->be = be;
-
-	/* looks good */
-	RETVAL_TRUE;
-}
-/* }}} */
-
-/* {{{
-Function to test boot environment support and sanity.
-Returns false on systems that don't support BEs.
- */
-PHP_FUNCTION(libbe_check)
-{
-	libbe_handle_t	*be;
-
-	ZEND_PARSE_PARAMETERS_NONE();
-
-	RETVAL_BOOL((be = libbe_init(NULL)) != NULL);
-
-	if (be)
-		libbe_close(be);
-}
-/* }}} */
-
-/* {{{
-Function returns the libbe extension version.
- */
-PHP_FUNCTION(libbe_version)
-{
-	ZEND_PARSE_PARAMETERS_NONE();
-
-	RETURN_STRING(PHP_LIBBE_VERSION);
-}
-/* }}} */
-
-/* this is an implementation shared by several libbe functions below */
-static void
-_php_libbe_char_getter_impl(
-	INTERNAL_FUNCTION_PARAMETERS, const char *(*be_func)(libbe_handle_t *))
-{
-	zval		*zhdl;
-
-	php_libbe	*bh;
-
-	ZEND_PARSE_PARAMETERS_START(1, 1)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-	ZEND_PARSE_PARAMETERS_END();
-
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be)
-		RETURN_STRING(be_func(bh->be));
 }
 
-/* {{{
-Returns the name of the currently booted boot environment.
- */
 PHP_FUNCTION(be_active_name)
 {
-	_php_libbe_char_getter_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, be_active_name);
-}
-/* }}} */
+	zval *zbe;
 
-/* {{{
-Returns the full path of the currently booted boot environment.
- */
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+	ZEND_PARSE_PARAMETERS_END();
+
+	RETURN_STRING(be_active_name(Z_LIBBE_P(zbe)->be));
+}
+
 PHP_FUNCTION(be_active_path)
 {
-	_php_libbe_char_getter_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, be_active_path);
-}
-/* }}} */
+	zval *zbe;
 
-/* {{{
-Returns the name of the boot environment that will be active on reboot.
- */
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+	ZEND_PARSE_PARAMETERS_END();
+
+	RETURN_STRING(be_active_path(Z_LIBBE_P(zbe)->be));
+}
+
 PHP_FUNCTION(be_nextboot_name)
 {
-	_php_libbe_char_getter_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, be_nextboot_name);
-}
-/* }}} */
+	zval *zbe;
 
-/* {{{
-Returns the full path of the boot environment that will be active on reboot.
- */
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+	ZEND_PARSE_PARAMETERS_END();
+
+	RETURN_STRING(be_nextboot_name(Z_LIBBE_P(zbe)->be));
+}
+
 PHP_FUNCTION(be_nextboot_path)
 {
-	_php_libbe_char_getter_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, be_nextboot_path);
-}
-/* }}} */
+	zval *zbe;
 
-/* {{{
-Returns the boot environment root path.
- */
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+	ZEND_PARSE_PARAMETERS_END();
+
+	RETURN_STRING(be_nextboot_path(Z_LIBBE_P(zbe)->be));
+}
+
 PHP_FUNCTION(be_root_path)
 {
-	_php_libbe_char_getter_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, be_root_path);
-}
-/* }}} */
+	zval *zbe;
 
-/* {{{
-Creates a snapshot of be_name named snap_name.
-A NULL snap_name may be used, indicating that be_snaphot() should derive
-the snapshot name from the current date and time. If recursive is set,
-then be_snapshot() will recursively snapshot the dataset. If result is
-not NULL, then it will be populated with the final "be_name@snap_name".
- */
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+	ZEND_PARSE_PARAMETERS_END();
+
+	RETURN_STRING(be_root_path(Z_LIBBE_P(zbe)->be));
+}
+
 PHP_FUNCTION(be_snapshot)
 {
-	zval		*zhdl;
-	char		*be_name, *snap_name = NULL;
-	size_t 		be_name_len, snap_name_len;
-	zend_bool 	recursive = false;
+	zval *zbe, *zresult = NULL;
+	char *be_name, *snap_name;
+	size_t  be_name_len, snap_name_len;
+	zend_bool recursive;
 
-	php_libbe	*bh;
-	char 		snapshot[BE_MAXPATHLEN];
-
-	ZEND_PARSE_PARAMETERS_START(2, 4)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
+	ZEND_PARSE_PARAMETERS_START(4, 5)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
 		Z_PARAM_STRING(be_name, be_name_len)
-		Z_PARAM_OPTIONAL
-		Z_PARAM_STRING(snap_name, snap_name_len)
-		Z_PARAM_OPTIONAL
+		Z_PARAM_STRING_OR_NULL(snap_name, snap_name_len)
 		Z_PARAM_BOOL(recursive)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_ZVAL(zresult)
 	ZEND_PARSE_PARAMETERS_END();
 
-	bh = Z_LIBBE_P(zhdl);
+	int ret;
+	char snapshot[BE_MAXPATHLEN];
 
-	RETVAL_FALSE;
+	RETVAL_LONG(ret = be_snapshot(Z_LIBBE_P(zbe)->be, be_name,
+	    snap_name, recursive, snapshot));
 
-	if (bh->be)
-		if (be_snapshot(bh->be, be_name, snap_name, recursive, snapshot) == BE_ERR_SUCCESS)
-			RETURN_STRING(snapshot);
-}
-/* }}} */
-
-/* {{{
-Determine if the gives snapshot name matches the format that the be_snapshot()
-function will use by default if it is not given a snapshot name to use.
- */
-PHP_FUNCTION(be_is_auto_snapshot_name)
-{
-	zval		*zhdl;
-	char		*snap;
-	size_t		snap_len;
-
-	php_libbe	*bh;
-
-	ZEND_PARSE_PARAMETERS_START(2, 2)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-		Z_PARAM_STRING(snap, snap_len)
-	ZEND_PARSE_PARAMETERS_END();
-
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be)
-		RETURN_BOOL(be_is_auto_snapshot_name(bh->be, snap));
-}
-/* }}} */
-
-/* {{{
-Function creates a boot environment with the given name. The new boot environment
-will be created from a recursive snapshot of the currently booted boot environment.
- */
-PHP_FUNCTION(be_create)
-{
-	zval		*zhdl;
-	char		*be_name;
-	size_t		be_name_len;
-
-	php_libbe	*bh;
-
-	ZEND_PARSE_PARAMETERS_START(2, 2)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-		Z_PARAM_STRING(be_name, be_name_len)
-	ZEND_PARSE_PARAMETERS_END();
-
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be) {
-		if (strchr(be_name, ' ') != NULL)
-			RETURN_LONG(BE_ERR_INVALIDNAME);
-		RETURN_LONG(be_create(bh->be, be_name));
+	if (zresult && (ret == BE_ERR_SUCCESS)) {
+		ZVAL_DEREF(zresult);
+		ZVAL_STRING(zresult, snapshot);
 	}
 }
-/* }}} */
 
-/* {{{
-Function creates a boot environment with the given name from an existing snapshot.
-The depth parameter specifies the depth of recursion that will be cloned from the
-existing snapshot. A depth of '0' is no recursion and '-1' is unlimited (i.e., a
-recursive boot environment).
- */
-PHP_FUNCTION(be_create_depth)
+PHP_FUNCTION(be_is_auto_snapshot_name)
 {
-	zval		*zhdl;
-	char		*be_name, *snap;
-	size_t		be_name_len, snap_len;
-	zend_long	depth = 0;
+	zval *zbe;
+	char *snap_name;
+	size_t snap_name_len;
 
 	php_libbe	*bh;
 
-	ZEND_PARSE_PARAMETERS_START(3, 4)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
+	ZEND_PARSE_PARAMETERS_START(2, 2)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+		Z_PARAM_STRING(snap_name, snap_name_len)
+	ZEND_PARSE_PARAMETERS_END();
+
+	RETURN_BOOL(be_is_auto_snapshot_name(Z_LIBBE_P(zbe)->be, snap_name));
+}
+
+PHP_FUNCTION(be_create)
+{
+	zval *zbe;
+	char *be_name;
+	size_t be_name_len;
+
+	ZEND_PARSE_PARAMETERS_START(2, 2)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
 		Z_PARAM_STRING(be_name, be_name_len)
-		Z_PARAM_STRING(snap, snap_len)
-		Z_PARAM_OPTIONAL
+	ZEND_PARSE_PARAMETERS_END();
+
+	RETURN_LONG(be_create(Z_LIBBE_P(zbe)->be, be_name));
+}
+
+PHP_FUNCTION(be_create_depth)
+{
+	zval *zbe;
+	char *be_name, *snap_name;
+	size_t be_name_len, snap_name_len;
+	zend_long depth;
+
+	ZEND_PARSE_PARAMETERS_START(4, 4)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+		Z_PARAM_STRING(be_name, be_name_len)
+		Z_PARAM_STRING(snap_name, snap_name_len)
 		Z_PARAM_LONG(depth)
 	ZEND_PARSE_PARAMETERS_END();
 
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be) {
-		if (strchr(be_name, ' ') != NULL)
-			RETURN_LONG(BE_ERR_INVALIDNAME);
-		RETURN_LONG(be_create_depth(bh->be, be_name, snap, depth));
-	}
+	RETURN_LONG(be_create_depth(Z_LIBBE_P(zbe)->be, be_name,
+	    snap_name, depth));
 }
-/* }}} */
 
-/* {{{
-Function creates a boot environment with the given name from the name of an existing
-boot environment. A recursive snapshot will be made of the origin boot environment,
-and the new boot environment will be created from that.
- */
 PHP_FUNCTION(be_create_from_existing)
 {
-	zval		*zhdl;
-	char		*be_name, *be_origin;
-	size_t		be_name_len, be_origin_len;
-
-	php_libbe	*bh;
+	zval *zbe;
+	char *be_name, *be_origin;
+	size_t be_name_len, be_origin_len;
 
 	ZEND_PARSE_PARAMETERS_START(3, 3)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
 		Z_PARAM_STRING(be_name, be_name_len)
 		Z_PARAM_STRING(be_origin, be_origin_len)
 	ZEND_PARSE_PARAMETERS_END();
 
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be) {
-		if (strchr(be_name, ' ') != NULL)
-			RETURN_LONG(BE_ERR_INVALIDNAME);
-		RETURN_LONG(be_create_from_existing(bh->be, be_name, be_origin));
-	}
+	RETURN_LONG(be_create_from_existing(Z_LIBBE_P(zbe)->be,
+	    be_name, be_origin));
 }
-/* }}} */
 
-/* {{{
-Function creates a recursive boot environment with the given name from an existing snapshot.
- */
 PHP_FUNCTION(be_create_from_existing_snap)
 {
-	zval		*zhdl;
-	char		*be_name, *snap;
-	size_t		be_name_len, snap_len;
-
-	php_libbe	*bh;
+	zval *zbe;
+	char *be_name, *snap_name;
+	size_t be_name_len, snap_name_len;
 
 	ZEND_PARSE_PARAMETERS_START(3, 3)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
 		Z_PARAM_STRING(be_name, be_name_len)
-		Z_PARAM_STRING(snap, snap_len)
+		Z_PARAM_STRING(snap_name, snap_name_len)
 	ZEND_PARSE_PARAMETERS_END();
 
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be) {
-		if (strchr(be_name, ' ') != NULL)
-			RETURN_LONG(BE_ERR_INVALIDNAME);
-		RETURN_LONG(be_create_from_existing_snap(bh->be, be_name, snap));
-	}
+	RETURN_LONG(be_create_from_existing_snap(Z_LIBBE_P(zbe)->be,
+	    be_name, snap_name));
 }
-/* }}} */
 
-/* {{{
-Renames a boot environment without unmounting it, as if renamed with the -u argument
-were passed to zfs rename.
- */
 PHP_FUNCTION(be_rename)
 {
-	zval		*zhdl;
-	char		*be_old, *be_new;
-	size_t		be_old_len, be_new_len;
-
-	php_libbe	*bh;
+	zval *zbe;
+	char *be_name_old, *be_name_new;
+	size_t be_name_old_len, be_name_new_len;
 
 	ZEND_PARSE_PARAMETERS_START(3, 3)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-		Z_PARAM_STRING(be_old, be_old_len)
-		Z_PARAM_STRING(be_new, be_new_len)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+		Z_PARAM_STRING(be_name_old, be_name_old_len)
+		Z_PARAM_STRING(be_name_new, be_name_new_len)
 	ZEND_PARSE_PARAMETERS_END();
 
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be) {
-		if (strchr(be_new, ' ') != NULL)
-			RETURN_LONG(BE_ERR_INVALIDNAME);
-		RETURN_LONG(be_rename(bh->be, be_old, be_new));
-	}
+	RETURN_LONG(be_rename(Z_LIBBE_P(zbe)->be, be_name_old, be_name_new));
 }
-/* }}} */
 
-/* {{{
-Function makes a boot environment active on the next boot. If the temporary
-flag is set, then it will be active for the next boot only, as done by zfsbootcfg(8)
- */
 PHP_FUNCTION(be_activate)
 {
-	zval		*zhdl;
-	char		*be_name;
-	size_t		be_name_len;
-	zend_bool	temporary = false;
+	zval *zbe;
+	char *be_name;
+	size_t be_name_len;
+	zend_bool temporary;
 
-	php_libbe	*bh;
-
-	ZEND_PARSE_PARAMETERS_START(2, 3)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
+	ZEND_PARSE_PARAMETERS_START(3, 3)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
 		Z_PARAM_STRING(be_name, be_name_len)
-		Z_PARAM_OPTIONAL
 		Z_PARAM_BOOL(temporary)
 	ZEND_PARSE_PARAMETERS_END();
 
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be)
-		RETURN_LONG(be_activate(bh->be, be_name, temporary));
+	RETURN_LONG(be_activate(Z_LIBBE_P(zbe)->be, be_name, temporary));
 }
-/* }}} */
 
-/* {{{
-Function deactivates a boot environment. If the temporary flag is set, then it will
-cause removal of boot once configuration, set by be_activate() function or by zfsbootcfg(8).
-If the temporary flag is not set, be_deactivate() function will set zfs canmount property to noauto.
- */
-#if __FreeBSD_version >= 1300000
 PHP_FUNCTION(be_deactivate)
 {
-	zval		*zhdl;
-	char		*be_name;
-	size_t		be_name_len;
-	zend_bool	temporary = false;
+	zval *zbe;
+	char *be_name;
+	size_t be_name_len;
+	zend_bool temporary;
 
-	php_libbe	*bh;
-
-	ZEND_PARSE_PARAMETERS_START(2, 3)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
+	ZEND_PARSE_PARAMETERS_START(3, 3)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
 		Z_PARAM_STRING(be_name, be_name_len)
-		Z_PARAM_OPTIONAL
 		Z_PARAM_BOOL(temporary)
 	ZEND_PARSE_PARAMETERS_END();
 
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be)
-		RETURN_LONG(be_deactivate(bh->be, be_name, temporary));
+	RETURN_LONG(be_deactivate(Z_LIBBE_P(zbe)->be, be_name, temporary));
 }
-#endif
-/* }}} */
 
-/* {{{
-Function will recursively destroy the given boot environment. It will not destroy a mounted
-boot environment unless the BE_DESTROY_FORCE option is set in options. If the BE_DESTROY_ORIGIN
-option is set in options, the be_destroy() function will destroy the origin snapshot to this
-boot environment as well.
- */
 PHP_FUNCTION(be_destroy)
 {
-	zval		*zhdl;
-	char		*be_name;
-	size_t		be_name_len;
-	zend_long	options = 0;
+	zval *zbe;
+	char *be_name;
+	size_t be_name_len;
+	zend_long options;
 
-	php_libbe	*bh;
-
-	ZEND_PARSE_PARAMETERS_START(2, 3)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
+	ZEND_PARSE_PARAMETERS_START(3, 3)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
 		Z_PARAM_STRING(be_name, be_name_len)
-		Z_PARAM_OPTIONAL
 		Z_PARAM_LONG(options)
 	ZEND_PARSE_PARAMETERS_END();
 
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be)
-		RETURN_LONG(be_destroy(bh->be, be_name, options));
+	RETURN_LONG(be_destroy(Z_LIBBE_P(zbe)->be, be_name, options));
 }
-/* }}} */
 
-/* {{{
-Function will format name in a traditional ZFS humanized format, similar to humanize_number(3).
-This function effectively proxies zfs_nicenum() from libzfs.
- */
 PHP_FUNCTION(be_nicenum)
 {
-	zend_long	num;
-	char		buf[6];
+	zend_long num;
+	char buf[6];
 
 	ZEND_PARSE_PARAMETERS_START(1, 1)
 		Z_PARAM_LONG(num)
@@ -667,417 +368,318 @@ PHP_FUNCTION(be_nicenum)
 
 	RETURN_STRING(buf);
 }
-/* }}} */
 
-/* {{{
-Function will mount the given boot environment. If mountpoint is NULL, a mount point will be
-generated in /tmp using mkdtemp(3). If result is not NULL, it should be large enough to accommodate
-BE_MAXPATHLEN including the null terminator. The final mount point will be copied into it. Setting 
-the BE_MNT_FORCE flag will pass MNT_FORCE to the underlying mount(2) call.
- */
 PHP_FUNCTION(be_mount)
 {
-	zval		*zhdl;
-	char		*be_name, *mntpoint = NULL;
-	size_t		be_name_len, mntpoint_len;
-	zend_long	flags = 0;
+	zval *zbe, *zresult = NULL;
+	char *be_name, *mnt_point = NULL;
+	size_t be_name_len, mnt_point_len;
+	zend_long flags;
 
-	php_libbe	*bh;
-	char		result_loc[BE_MAXPATHLEN];
-	int		err;
-
-	ZEND_PARSE_PARAMETERS_START(2, 4)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
+	ZEND_PARSE_PARAMETERS_START(4, 5)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
 		Z_PARAM_STRING(be_name, be_name_len)
-		Z_PARAM_OPTIONAL
-		Z_PARAM_STRING(mntpoint, mntpoint_len)
-		Z_PARAM_OPTIONAL
+		Z_PARAM_STRING_OR_NULL(mnt_point, mnt_point_len)
 		Z_PARAM_LONG(flags)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_ZVAL(zresult);
 	ZEND_PARSE_PARAMETERS_END();
 
-	bh = Z_LIBBE_P(zhdl);
+	int ret;
+	char result[BE_MAXPATHLEN];
 
-	RETVAL_FALSE;
+	RETVAL_LONG(ret = be_mount(Z_LIBBE_P(zbe)->be, be_name, mnt_point,
+	    flags, result));
 
-	if (bh->be)
-		if (be_mount(bh->be, be_name, mntpoint, flags, result_loc) == BE_ERR_SUCCESS)
-			RETURN_STRING(result_loc);
+	if (zresult && (ret == BE_ERR_SUCCESS)) {
+		ZVAL_DEREF(zresult);
+		ZVAL_STRING(zresult, result);
+	}
 }	
-/* }}} */
 
-/* {{{
-Function will check if there is a boot environment mounted at the given path.
-If details is not NULL, it will be populated with a list of the mounted dataset's properties.
-This list of properties matches the properties collected by be_get_bootenv_props().
- */
 PHP_FUNCTION(be_mounted_at)
 {
-	zval		*zhdl;
-	char		*path;
-	size_t		path_len;
-
-	php_libbe	*bh;
-	nvlist_t	*bootenv;
-
-	ZEND_PARSE_PARAMETERS_START(2, 2)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-		Z_PARAM_STRING(path, path_len)
-	ZEND_PARSE_PARAMETERS_END();
-
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be) {
-		if (be_prop_list_alloc(&bootenv) != BE_ERR_SUCCESS) {
-			php_error_docref(NULL, E_WARNING, "Failed to allocate nvlist");
-			return;
-		}
-
-		if (be_mounted_at(bh->be, path, bootenv) == BE_ERR_SUCCESS)
-			php_nvlist_to_zval_array(return_value, bootenv);
-
-		/* cleanup */
-		be_prop_list_free(bootenv);
-	}
-}
-/* }}} */
-
-/* {{{
-Function will unmount the given boot environment. Setting the BE_MNT_FORCE flag will pass MNT_FORCE
-to the underlying mount(2) call.
- */
-PHP_FUNCTION(be_unmount)
-{
-	zval		*zhdl;
-	char		*be_name;
-	size_t		be_name_len;
-	zend_long	flags = 0;
-
-	php_libbe	*bh;
+	zval *zbe, *zdetails = NULL;
+	char *path;
+	size_t path_len;
 
 	ZEND_PARSE_PARAMETERS_START(2, 3)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-		Z_PARAM_STRING(be_name, be_name_len)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+		Z_PARAM_STRING(path, path_len)
 		Z_PARAM_OPTIONAL
+		Z_PARAM_ZVAL(zdetails)
+	ZEND_PARSE_PARAMETERS_END();
+
+	int ret;
+	nvlist_t *bootenv;
+
+	if (be_prop_list_alloc(&bootenv) != BE_ERR_SUCCESS) {
+		php_error_docref(NULL, E_ERROR, "Failed to allocate nvlist");
+		return;
+	}
+
+	RETVAL_LONG(ret = be_mounted_at(Z_LIBBE_P(zbe)->be, path, bootenv));
+
+	if (zdetails && (ret == BE_ERR_SUCCESS)) {
+		ZVAL_DEREF(zdetails);
+		php_nvlist_to_zval_array(zdetails, bootenv);
+	}
+
+	be_prop_list_free(bootenv);
+}
+
+PHP_FUNCTION(be_unmount)
+{
+	zval *zbe;
+	char *be_name;
+	size_t be_name_len;
+	zend_long flags;
+
+	ZEND_PARSE_PARAMETERS_START(3, 3)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+		Z_PARAM_STRING(be_name, be_name_len)
 		Z_PARAM_LONG(flags)
 	ZEND_PARSE_PARAMETERS_END();
 
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be)
-		RETURN_LONG(be_unmount(bh->be, be_name, flags));
+	RETURN_LONG(be_unmount(Z_LIBBE_P(zbe)->be, be_name, flags));
 }	
-/* }}} */
 
-/* {{{
-Function returns the libbe errno.
- */
 PHP_FUNCTION(libbe_errno)
 {
-	zval		*zhdl;
-
-	php_libbe	*bh;
+	zval *zbe;
 
 	ZEND_PARSE_PARAMETERS_START(1, 1)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
 	ZEND_PARSE_PARAMETERS_END();
 
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be)
-		RETURN_LONG(libbe_errno(bh->be));
+	RETURN_LONG(libbe_errno(Z_LIBBE_P(zbe)->be));
 }
-/* }}} */
 
-/* {{{
-Function returns a string description of the currently set libbe errno.
- */
 PHP_FUNCTION(libbe_error_description)
 {
-	_php_libbe_char_getter_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, libbe_error_description);
-}
-/* }}} */
+	zval *zbe;
 
-/* {{{
-Function will change whether or not libbe prints the description of any encountered error to
-stderr, based on doprint.
- */
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+	ZEND_PARSE_PARAMETERS_END();
+
+	RETURN_STRING(libbe_error_description(Z_LIBBE_P(zbe)->be));
+}
+
 PHP_FUNCTION(libbe_print_on_error)
 {
-	zval		*zhdl;
-	zend_bool	doprint = false;
-
-	php_libbe	*bh;
+	zval *zbe;
+	zend_bool doprint;
 
 	ZEND_PARSE_PARAMETERS_START(2, 2)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
 		Z_PARAM_BOOL(doprint)
 	ZEND_PARSE_PARAMETERS_END();
 
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be) {
-		libbe_print_on_error(bh->be, doprint);
-		RETURN_TRUE;
-	}
+	libbe_print_on_error(Z_LIBBE_P(zbe)->be, doprint);
 }
-/* }}} */
 
-/* {{{
-Function will concatenate the boot environment root and the given boot environment name.
- */
 PHP_FUNCTION(be_root_concat)
 {
-	zval		*zhdl;
-	char		*be_name;
-	size_t		be_name_len;
+	zval *zbe, *zresult;
+	char *be_name;
+	size_t be_name_len;
 
-	php_libbe	*bh;
-	char		targetds[BE_MAXPATHLEN];
-
-	ZEND_PARSE_PARAMETERS_START(2, 2)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-		Z_PARAM_STRING(be_name, be_name_len)
-	ZEND_PARSE_PARAMETERS_END();
-
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be)
-		if (be_root_concat(bh->be, be_name, targetds) == BE_ERR_SUCCESS)
-			RETURN_STRING(targetds);
-}
-/* }}} */
-
-/* {{{
-Validate the given boot environment name for both length restrictions as well as
-valid character restrictions.
- */
-PHP_FUNCTION(be_validate_name)
-{
-	zval		*zhdl;
-	char		*be_name;
-	size_t		be_name_len;
-
-	php_libbe	*bh;
-
-	ZEND_PARSE_PARAMETERS_START(2, 2)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-		Z_PARAM_STRING(be_name, be_name_len)
-	ZEND_PARSE_PARAMETERS_END();
-
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be) {
-		if (strchr(be_name, ' ') != NULL)
-			RETURN_LONG(BE_ERR_INVALIDNAME);
-		RETURN_LONG(be_validate_name(bh->be, be_name));
-	}
-}
-/* }}} */
-
-/* {{{
-Validate the given snapshot name. The snapshot must have a valid name, exist, and
-have a mountpoint of /.
- */
-PHP_FUNCTION(be_validate_snap)
-{
-	zval		*zhdl;
-	char		*snap;
-	size_t		snap_len;
-
-	php_libbe	*bh;
-
-	ZEND_PARSE_PARAMETERS_START(2, 2)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-		Z_PARAM_STRING(snap, snap_len)
-	ZEND_PARSE_PARAMETERS_END();
-
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be)
-		RETURN_LONG(be_validate_snap(bh->be, snap));
-}
-/* }}} */
-
-/* {{{
-Function will check whether the given boot environment exists and has a mountpoint
-of /. This function does not set the internal library error state, but will return
-the appropriate error.
- */
-PHP_FUNCTION(be_exists)
-{
-	zval		*zhdl;
-	char		*be_name;
-	size_t		be_name_len;
-
-	php_libbe	*bh;
-
-	ZEND_PARSE_PARAMETERS_START(2, 2)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-		Z_PARAM_STRING(be_name, be_name_len)
-	ZEND_PARSE_PARAMETERS_END();
-
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be)
-		RETURN_LONG(be_exists(bh->be, be_name));
-}
-/* }}} */
-
-/* this is an implementation shared by several libbe functions below */
-static void
-_php_libbe_import_export_impl(
-	INTERNAL_FUNCTION_PARAMETERS, int (*be_func)(libbe_handle_t *, const char*, int))
-{
-	zval		*zhdl;
-	char		*be_name;
-	size_t		be_name_len;
-	zval		*zfd;
-
-	php_libbe	*bh;
-	php_stream	*stream;
-	int		fd;
 
 	ZEND_PARSE_PARAMETERS_START(3, 3)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
 		Z_PARAM_STRING(be_name, be_name_len)
-		Z_PARAM_RESOURCE(zfd)
+		Z_PARAM_ZVAL(zresult);
 	ZEND_PARSE_PARAMETERS_END();
 
-	bh = Z_LIBBE_P(zhdl);
+	int ret;
+	char result[BE_MAXPATHLEN];
 
-	RETVAL_FALSE;
+	RETVAL_LONG(ret = be_root_concat(Z_LIBBE_P(zbe)->be, be_name, result));
 
-	if (bh->be) {
-		php_stream_from_zval(stream, zfd);
-		if (php_stream_can_cast(stream, PHP_STREAM_AS_FD) == SUCCESS) {
-			php_stream_cast(stream, PHP_STREAM_AS_FD, (void**)&fd, REPORT_ERRORS);
-			RETURN_LONG(be_func(bh->be, be_name, fd));
-		}
+	if (zresult && (ret == BE_ERR_SUCCESS)) {
+		ZVAL_DEREF(zresult);
+		ZVAL_STRING(zresult, result);
 	}
 }
 
-/* {{{
-Function will export the given boot environment to the file specified by fd. A snapshot
-will be created of the boot environment prior to export.
- */
-PHP_FUNCTION(be_export)
+PHP_FUNCTION(be_validate_name)
 {
-	_php_libbe_import_export_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, be_export);
-}	
-/* }}} */
-
-/* {{{
-Function will import the boot environment in the file specified by fd, and give it the name be_name.
- */
-PHP_FUNCTION(be_import)
-{
-	_php_libbe_import_export_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, be_import);
-}	
-/* }}} */
-
-/* {{{
-Function will populate be_list with nvpair_t of boot environment names paired with an
-nvlist_t of their properties.
- */
-PHP_FUNCTION(be_get_bootenv_props)
-{
-	zval		*zhdl;
-
-	php_libbe	*bh;
-	nvlist_t	*bootenvs;
-
-	ZEND_PARSE_PARAMETERS_START(1, 1)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-	ZEND_PARSE_PARAMETERS_END();
-
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be) {
-		if (be_prop_list_alloc(&bootenvs) != 0) {
-			php_error_docref(NULL, E_WARNING, "Failed to allocate nvlist");
-			return;
-		}
-
-		if (be_get_bootenv_props(bh->be, bootenvs) == BE_ERR_SUCCESS)
-			php_nvlist_to_zval_array(return_value, bootenvs);
-
-		be_prop_list_free(bootenvs);
-	}
-}
-
-static void
-_php_libbe_dataset_impl(
-	INTERNAL_FUNCTION_PARAMETERS, int (*be_func)(libbe_handle_t *, const char*, nvlist_t *))
-{
-	zval		*zhdl;
-	char		*ds_name;
-	size_t		ds_name_len;
-
-	php_libbe	*bh;
-	nvlist_t	*proplist;
+	zval *zbe;
+	char *be_name;
+	size_t be_name_len;
 
 	ZEND_PARSE_PARAMETERS_START(2, 2)
-		Z_PARAM_OBJECT_OF_CLASS(zhdl, libbe_ce)
-		Z_PARAM_STRING(ds_name, ds_name_len)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+		Z_PARAM_STRING(be_name, be_name_len)
 	ZEND_PARSE_PARAMETERS_END();
 
-	bh = Z_LIBBE_P(zhdl);
-
-	RETVAL_FALSE;
-
-	if (bh->be) {
-		if (be_prop_list_alloc(&proplist) != 0) {
-			php_error_docref(NULL, E_WARNING, "Failed to allocate nvlist");
-			return;
-		}
-
-		if (be_func(bh->be, ds_name, proplist) == BE_ERR_SUCCESS)
-			php_nvlist_to_zval_array(return_value, proplist);
-
-		be_prop_list_free(proplist);
-	}
+	RETURN_LONG(be_validate_name(Z_LIBBE_P(zbe)->be, be_name));
 }
 
-/* {{{
-Function will get properties of the specified dataset. props is populated directly with a 
-list of the properties as returned by be_get_bootenv_props()
- */
+PHP_FUNCTION(be_validate_snap)
+{
+	zval *zbe;
+	char *snap_name;
+	size_t snap_name_len;
+
+	ZEND_PARSE_PARAMETERS_START(2, 2)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+		Z_PARAM_STRING(snap_name, snap_name_len)
+	ZEND_PARSE_PARAMETERS_END();
+
+	RETURN_LONG(be_validate_snap(Z_LIBBE_P(zbe)->be, snap_name));
+}
+
+PHP_FUNCTION(be_exists)
+{
+	zval *zbe;
+	char *be_name;
+	size_t be_name_len;
+
+	ZEND_PARSE_PARAMETERS_START(2, 2)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+		Z_PARAM_STRING(be_name, be_name_len)
+	ZEND_PARSE_PARAMETERS_END();
+
+	RETURN_LONG(be_exists(Z_LIBBE_P(zbe)->be, be_name));
+}
+
+PHP_FUNCTION(be_export)
+{
+	zval *zbe;
+	char *be_name;
+	size_t be_name_len;
+	zval *zres;
+
+	ZEND_PARSE_PARAMETERS_START(3, 3)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+		Z_PARAM_STRING(be_name, be_name_len)
+		Z_PARAM_RESOURCE(zres)
+	ZEND_PARSE_PARAMETERS_END();
+
+	php_stream *stream;
+	php_socket_t fd;
+
+	php_stream_from_zval(stream, zres);
+
+	if (php_stream_cast(stream, PHP_STREAM_AS_FD, (void **)&fd, REPORT_ERRORS) == FAILURE) {
+		php_error_docref(NULL, E_WARNING, "Could not use stream of type '%s'",
+		    stream->ops->label);
+		return;
+	}
+
+	RETURN_LONG(be_export(Z_LIBBE_P(zbe)->be, be_name, (int)fd));
+}	
+
+PHP_FUNCTION(be_import)
+{
+	zval *zbe;
+	char *be_name;
+	size_t be_name_len;
+	zval *zres;
+
+	ZEND_PARSE_PARAMETERS_START(3, 3)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+		Z_PARAM_STRING(be_name, be_name_len)
+		Z_PARAM_RESOURCE(zres)
+	ZEND_PARSE_PARAMETERS_END();
+
+	php_stream *stream;
+	php_socket_t fd;
+
+	php_stream_from_zval(stream, zres);
+
+	if (php_stream_cast(stream, PHP_STREAM_AS_FD, (void **)&fd, REPORT_ERRORS) == FAILURE) {
+		php_error_docref(NULL, E_WARNING, "Could not use stream of type '%s'",
+		    stream->ops->label);
+		return;
+	}
+
+	RETURN_LONG(be_import(Z_LIBBE_P(zbe)->be, be_name, (int)fd));
+}	
+
+PHP_FUNCTION(be_get_bootenv_props)
+{
+	zval *zbe, *zlist;
+
+	ZEND_PARSE_PARAMETERS_START(2, 2)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+		Z_PARAM_ZVAL(zlist)
+	ZEND_PARSE_PARAMETERS_END();
+
+	nvlist_t *bootenvs;
+
+	if (be_prop_list_alloc(&bootenvs) != BE_ERR_SUCCESS) {
+		php_error_docref(NULL, E_ERROR, "Failed to allocate nvlist");
+		return;
+	}
+
+	RETVAL_LONG(be_get_bootenv_props(Z_LIBBE_P(zbe)->be, bootenvs));
+
+	ZVAL_DEREF(zlist);
+
+	php_nvlist_to_zval_array(zlist, bootenvs);
+
+	be_prop_list_free(bootenvs);
+}
+
 PHP_FUNCTION(be_get_dataset_props)
 {
-	_php_libbe_dataset_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, be_get_dataset_props);
-}	
-/* }}} */
+	zval *zbe, *zprops;
+	char *ds_name;
+	size_t ds_name_len;
 
-/* {{{
-Function will retrieve all snapshots of the given dataset. snap_list will be populated with
-a list of nvpair_t exactly as specified by be_get_bootenv_props()
- */
+	ZEND_PARSE_PARAMETERS_START(3, 3)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+		Z_PARAM_STRING(ds_name, ds_name_len)
+		Z_PARAM_ZVAL(zprops)
+	ZEND_PARSE_PARAMETERS_END();
+
+	nvlist_t *proplist;
+
+	if (be_prop_list_alloc(&proplist) != BE_ERR_SUCCESS) {
+		php_error_docref(NULL, E_ERROR, "Failed to allocate nvlist");
+		return;
+	}
+
+	RETVAL_LONG(be_get_dataset_props(Z_LIBBE_P(zbe)->be, ds_name, proplist));
+
+	ZVAL_DEREF(zprops);
+
+	php_nvlist_to_zval_array(zprops, proplist);
+
+	be_prop_list_free(proplist);
+}	
+
 PHP_FUNCTION(be_get_dataset_snapshots)
 {
-	_php_libbe_dataset_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, be_get_dataset_snapshots);
-}	
-/* }}} */
+	zval *zbe, *zsnaps;
+	char *ds_name;
+	size_t ds_name_len;
 
-/* {{{ PHP_RINIT_FUNCTION
- */
+	ZEND_PARSE_PARAMETERS_START(3, 3)
+		Z_PARAM_OBJECT_OF_CLASS(zbe, libbe_ce)
+		Z_PARAM_STRING(ds_name, ds_name_len)
+		Z_PARAM_ZVAL(zsnaps)
+	ZEND_PARSE_PARAMETERS_END();
+
+	nvlist_t *snaplist;
+
+	if (be_prop_list_alloc(&snaplist) != BE_ERR_SUCCESS) {
+		php_error_docref(NULL, E_ERROR, "Failed to allocate nvlist");
+		return;
+	}
+
+	RETVAL_LONG(be_get_dataset_snapshots(Z_LIBBE_P(zbe)->be, ds_name, snaplist));
+
+	ZVAL_DEREF(zsnaps);
+
+	php_nvlist_to_zval_array(zsnaps, snaplist);
+
+	be_prop_list_free(snaplist);
+}	
+
 PHP_RINIT_FUNCTION(libbe)
 {
 #if defined(ZTS) && defined(COMPILE_DL_LIBBE)
@@ -1086,253 +688,18 @@ PHP_RINIT_FUNCTION(libbe)
 
 	return SUCCESS;
 }
-/* }}} */
 
-/* {{{ PHP_MINFO_FUNCTION
- */
 PHP_MINFO_FUNCTION(libbe)
 {
 	php_info_print_table_start();
 	php_info_print_table_header(2, "libbe support", "enabled");
 	php_info_print_table_end();
 }
-/* }}} */
 
-/* {{{ arginfo
- */
-ZEND_BEGIN_ARG_INFO(arginfo_libbe_init, 0)
-	ZEND_ARG_INFO(0, root)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_libbe_close, 0)
-	ZEND_ARG_INFO(0, hdl)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_libbe_refresh, 0)
-	ZEND_ARG_INFO(0, hdl)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_libbe_check, 0)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_libbe_version, 0)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_active_name, 0)
-	ZEND_ARG_INFO(0, hdl)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_active_path, 0)
-	ZEND_ARG_INFO(0, hdl)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_nextboot_name, 0)
-	ZEND_ARG_INFO(0, hdl)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_nextboot_path, 0)
-	ZEND_ARG_INFO(0, hdl)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_root_path, 0)
-	ZEND_ARG_INFO(0, hdl)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_snapshot, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, be_name)
-	ZEND_ARG_INFO(0, snap_name)
-	ZEND_ARG_INFO(0, recursive)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_is_auto_snapshot_name, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, snap)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_create, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, be_name)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_create_depth, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, be_name)
-	ZEND_ARG_INFO(0, snap)
-	ZEND_ARG_INFO(0, depth)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_create_from_existing, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, be_name)
-	ZEND_ARG_INFO(0, be_origin)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_create_from_existing_snap, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, be_name)
-	ZEND_ARG_INFO(0, snap)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_rename, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, be_new)
-	ZEND_ARG_INFO(0, be_old)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_activate, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, be_name)
-	ZEND_ARG_INFO(0, temporary)
-ZEND_END_ARG_INFO()
-
-#if __FreeBSD_version >= 1300000
-ZEND_BEGIN_ARG_INFO(arginfo_be_deactivate, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, be_name)
-	ZEND_ARG_INFO(0, temporary)
-ZEND_END_ARG_INFO()
-#endif
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_destroy, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, be_name)
-	ZEND_ARG_INFO(0, options)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_nicenum, 0)
-	ZEND_ARG_INFO(0, num)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_mount, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, be_name)
-	ZEND_ARG_INFO(0, mntpoint)
-	ZEND_ARG_INFO(0, flags)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_mounted_at, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, path)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_unmount, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, be_name)
-	ZEND_ARG_INFO(0, flags)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_libbe_errno, 0)
-	ZEND_ARG_INFO(0, hdl)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_libbe_error_description, 0)
-	ZEND_ARG_INFO(0, hdl)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_libbe_print_on_error, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, doprint)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_root_concat, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, be_name)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_validate_name, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, be_name)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_validate_snap, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, snap)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_exists, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, be_name)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_export, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, be_name)
-	ZEND_ARG_INFO(0, fd)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_import, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, be_name)
-	ZEND_ARG_INFO(0, fd)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_get_bootenv_props, 0)
-	ZEND_ARG_INFO(0, hdl)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_get_dataset_props, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, ds_name)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_be_get_dataset_snapshots, 0)
-	ZEND_ARG_INFO(0, hdl)
-	ZEND_ARG_INFO(0, ds_name)
-ZEND_END_ARG_INFO()
-/* }}} */
-
-/* {{{ libbe_functions[]
- */
-static const zend_function_entry libbe_functions[] = {
-	PHP_FE(libbe_init,			arginfo_libbe_init)
-	PHP_FE(libbe_close,			arginfo_libbe_close)
-	PHP_FE(libbe_refresh,			arginfo_libbe_refresh)
-	PHP_FE(libbe_check,			arginfo_libbe_check)
-	PHP_FE(libbe_version,			arginfo_libbe_version)
-	PHP_FE(be_active_name,			arginfo_be_active_name)
-	PHP_FE(be_active_path,			arginfo_be_active_path)
-	PHP_FE(be_nextboot_name,		arginfo_be_nextboot_name)
-	PHP_FE(be_nextboot_path,		arginfo_be_nextboot_path)
-	PHP_FE(be_root_path,			arginfo_be_root_path)
-	PHP_FE(be_snapshot,			arginfo_be_snapshot)
-	PHP_FE(be_is_auto_snapshot_name,	arginfo_be_is_auto_snapshot_name)
-	PHP_FE(be_create,			arginfo_be_create)
-	PHP_FE(be_create_depth,			arginfo_be_create_depth)
-	PHP_FE(be_create_from_existing,		arginfo_be_create_from_existing)
-	PHP_FE(be_create_from_existing_snap,	arginfo_be_create_from_existing_snap)
-	PHP_FE(be_rename,			arginfo_be_rename)
-	PHP_FE(be_activate,			arginfo_be_activate)
-#if __FreeBSD_version >= 1300000
-	PHP_FE(be_deactivate,			arginfo_be_deactivate)
-#endif
-	PHP_FE(be_destroy,			arginfo_be_destroy)
-	PHP_FE(be_nicenum,			arginfo_be_nicenum)
-	PHP_FE(be_mount,			arginfo_be_mount)
-	PHP_FE(be_mounted_at,			arginfo_be_mounted_at)
-	PHP_FE(be_unmount,			arginfo_be_unmount)
-	PHP_FE(libbe_errno,			arginfo_libbe_errno)
-	PHP_FE(libbe_error_description,		arginfo_libbe_error_description)
-	PHP_FE(libbe_print_on_error,		arginfo_libbe_print_on_error)
-	PHP_FE(be_root_concat,			arginfo_be_root_concat)
-	PHP_FE(be_validate_name,		arginfo_be_validate_name)
-	PHP_FE(be_validate_snap,		arginfo_be_validate_snap)
-	PHP_FE(be_exists,			arginfo_be_exists)
-	PHP_FE(be_export,			arginfo_be_export)
-	PHP_FE(be_import,			arginfo_be_import)
-	PHP_FE(be_get_bootenv_props,		arginfo_be_get_bootenv_props)
-	PHP_FE(be_get_dataset_props,		arginfo_be_get_dataset_props)
-	PHP_FE(be_get_dataset_snapshots,	arginfo_be_get_dataset_snapshots)
-	PHP_FE_END
-};
-/* }}} */
-
-/* {{{ libbe_module_entry
- */
 zend_module_entry libbe_module_entry = {
 	STANDARD_MODULE_HEADER,
 	"libbe",						/* Extension name */
-	libbe_functions,					/* zend_function_entry */
+	ext_functions,
 	PHP_MINIT(libbe),					/* PHP_MINIT - Module initialization */
 	NULL,							/* PHP_MSHUTDOWN - Module shutdown */
 	PHP_RINIT(libbe),					/* PHP_RINIT - Request initialization */
@@ -1355,19 +722,13 @@ static void
 php_nvlist_to_zval_array(zval *dsczval, nvlist_t *srcnvl)
 {
 	nvpair_t *curnvp;
-
 	boolean_t bpropval;
-	char *cpropval;
+	const char *cpropval;
 	nvlist_t *npropval;
 	zval next;
 
-	/* might not be necessary, but won't hurt to be sure */
-	ZVAL_UNDEF(dsczval);
-
-	/* we know the final zval will be of type zend_array */
 	array_init(dsczval);
 
-	/* start walking the nvpairs, looking for certain datatypes */
 	for (curnvp = nvlist_next_nvpair(srcnvl, NULL);
 		curnvp != NULL; curnvp = nvlist_next_nvpair(srcnvl, curnvp)) {
 		switch(nvpair_type(curnvp)) {
@@ -1379,7 +740,6 @@ php_nvlist_to_zval_array(zval *dsczval, nvlist_t *srcnvl)
 				if (nvpair_value_string(curnvp, &cpropval) == 0)
 					add_assoc_string(dsczval, nvpair_name(curnvp), cpropval);
 				break;
-			/* we found a nested nvlist, so we need to recursively walk it too... */
 			case DATA_TYPE_NVLIST:
 				if (nvpair_value_nvlist(curnvp, &npropval) == 0) {
 					php_nvlist_to_zval_array(&next, npropval);

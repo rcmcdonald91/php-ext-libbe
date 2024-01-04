@@ -16,5 +16,7 @@ build_task:
   configure_script:
     - env MAKE=gmake phpize
     - env MAKE=gmake ./configure
-  info_script:
-    - "uname -a"
+  build_script:
+    - gmake -j `sysctl -n kern.smp.cpus`
+  install_script:
+    - gmake install

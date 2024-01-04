@@ -10,6 +10,8 @@ build_task:
     memory: 8G
   matrix:
     compute_engine_instance:
+      image: family/freebsd-14-0
+    compute_engine_instance:
       image: family/freebsd-15-0-snap
   prepare_script:
     - pkg install -y autoconf automake libtool gmake php83 php83-tokenizer
@@ -18,5 +20,5 @@ build_task:
     - env MAKE=gmake ./configure
   build_script:
     - gmake -j `sysctl -n kern.smp.cpus`
-  install_script:
-    - gmake install
+  test_script:
+    - gmake test 

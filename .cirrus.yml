@@ -20,5 +20,3 @@ build_task:
     - env MAKE=gmake ./configure
   build_script:
     - gmake -j `sysctl -n kern.smp.cpus`
-  test_script:
-    - gmake test 

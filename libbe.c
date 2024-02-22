@@ -111,10 +111,8 @@ PHP_FUNCTION(libbe_init)
 	libbe_handle_t *be;
 	php_libbe *bh;
 
-	if ((be = libbe_init(root)) == NULL) {
-		php_error_docref(NULL, E_ERROR, "Could not initialize a new libbe handle");
+	if ((be = libbe_init(root)) == NULL)
 		RETURN_FALSE;
-	}
 
 	bh = init_libbe_handle_into_zval(return_value);
 	bh->be = be;
